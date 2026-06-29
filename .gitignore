@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.scene_cache/
+scene.json
+preview.png
+out.png
+*.swp
+.DS_Store
+node_modules/
+web/dist/
+scratch/
