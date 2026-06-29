@@ -422,20 +422,16 @@ def draw_ellipse(
     _add_shape(scene, "ellipse", x, y, w, h, fill, stroke, stroke_width, name)
 
 
-@draw_app.command("gradient")
-def draw_gradient(
-    kind: str = typer.Option("linear", "--kind", help="linear|radial"),
-    anchor: Optional[str] = typer.Option(None, "--anchor", help="Direction/center anchor."),
-    angle: Optional[float] = typer.Option(None, "--angle", help="Linear angle (deg)."),
-    stops: str = typer.Option(..., "--stops", help="'0:#000000ff, 1:#00000000'"),
-    over: Optional[str] = typer.Option(None, "--over", help="Insert above this layer id."),
-    name: Optional[str] = typer.Option(None, "--name"),
-    scene: str = _scene_opt(),
-):
-    """Add a linear/radial gradient as a layer."""
-    s = _load(scene)
-    parsed = parse_stops(stops)
-    g: dict = {"kind": kind, "stops": parsed}
+def _with_alpha(color: str, a: float) -> str:
+    """Combine a base color with an alpha fraction (0..1) -> '#rrggbbaa'."""
+    r, g, b, _ = parse_color(color)
+    aa = max(0, min(255, round(a * 255)))
+    return f"#{r:02x}{g:02x}{b:02x}{aa:02x}"
+
+
+def _add_gradient(scene_path, kind, anchor, angle, stops_list, over, name):
+    s = _load(scene_path)
+    g: dict = {"kind": kind, "stops": stops_list}
     if angle is not None:
         g["angle"] = angle
     if anchor:
@@ -449,6 +445,40 @@ def draw_gradient(
         s.layers.append(layer)
     s.save()
     typer.echo(f"added gradient layer {layer.id!r}")
+
+
+@draw_app.command("gradient")
+def draw_gradient(
+    kind: str = typer.Option("linear", "--kind", help="linear|radial"),
+    anchor: Optional[str] = typer.Option(None, "--anchor", help="Direction/center anchor."),
+    angle: Optional[float] = typer.Option(None, "--angle", help="Linear angle (deg)."),
+    stops: str = typer.Option(..., "--stops", help="'0:#000000ff, 1:#00000000'"),
+    over: Optional[str] = typer.Option(None, "--over", help="Insert above this layer id."),
+    name: Optional[str] = typer.Option(None, "--name"),
+    scene: str = _scene_opt(),
+):
+    """Add a linear/radial gradient as a layer (explicit per-stop colors)."""
+    _add_gradient(scene, kind, anchor, angle, parse_stops(stops), over, name)
+
+
+@draw_app.command("alpha-gradient")
+def draw_alpha_gradient(
+    color: str = typer.Option("#000000", "--color", help="Single gradient color (#rrggbb)."),
+    start: float = typer.Option(1.0, "--from", help="Start opacity 0..1 (at the anchor)."),
+    end: float = typer.Option(0.0, "--to", help="End opacity 0..1 (far edge)."),
+    kind: str = typer.Option("linear", "--kind", help="linear|radial"),
+    anchor: Optional[str] = typer.Option(None, "--anchor", help="Direction/center anchor."),
+    angle: Optional[float] = typer.Option(None, "--angle", help="Linear angle (deg)."),
+    over: Optional[str] = typer.Option(None, "--over", help="Insert above this layer id."),
+    name: Optional[str] = typer.Option(None, "--name"),
+    scene: str = _scene_opt(),
+):
+    """Add a one-color gradient that ramps only its alpha (color -> transparent)."""
+    stops = [
+        {"at": 0.0, "color": _with_alpha(color, start)},
+        {"at": 1.0, "color": _with_alpha(color, end)},
+    ]
+    _add_gradient(scene, kind, anchor, angle, stops, over, name or "alpha-gradient")
 
 
 # ---- serve (phase 2) -------------------------------------------------------------
