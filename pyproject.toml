@@ -10,7 +10,7 @@ dependencies = [
 
 [project.optional-dependencies]
 bg = ["rembg>=2.0", "onnxruntime>=1.17"]
-serve = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "watchfiles>=0.21"]
+serve = ["fastapi>=0.110", "uvicorn>=0.29", "watchfiles>=0.21", "wsproto>=1.2"]
 
 [project.scripts]
 gimpish = "gimpish.cli:app"
@@ -21,3 +21,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+gimpish = ["web/*.html"]
