@@ -61,7 +61,7 @@
     import htm from "https://esm.sh/htm@3.1.1";
     const html = htm.bind(React.createElement);
 
-    const ICONS = { image: "🖼", shape: "◆", gradient: "▧" };
+    const ICONS = { image: "🖼", shape: "◆", gradient: "▧", arrow: "➜", text: "T" };
 
     function shapeIcon(l) {
       if (l.type === "shape") return l.shape === "ellipse" ? "⬭" : "▭";
@@ -75,6 +75,15 @@
       }
       if (l.type === "shape") return `${l.shape}  ${l.fill ?? ""}${l.stroke ? " / " + l.stroke : ""}`;
       if (l.type === "gradient") return `${l.gradient?.kind ?? "linear"} gradient`;
+      if (l.type === "arrow") {
+        const a = l.arrow ?? {};
+        return `(${a.from_x}, ${a.from_y}) → (${a.to_x}, ${a.to_y})`;
+      }
+      if (l.type === "text") {
+        const t = l.text ?? {};
+        const content = (t.content ?? "").replaceAll("\\n", " ");
+        return `${content}  ·  ${t.font ?? "sans-serif"} ${t.size ?? ""}`;
+      }
       return "";
     }
 

@@ -16,8 +16,8 @@ loop or a cloud image service.
 - Imports source images as non-destructive layers.
 - Stores all composition state in `scene.json`.
 - Renders through one pyvips pipeline for preview, export, and the web UI.
-- Supports image layers, shape layers, gradient layers, opacity, blend modes, and
-  layer ordering.
+- Supports image, shape, gradient, arrow, and styled text layers, plus opacity,
+  blend modes, and layer ordering.
 - Removes image backgrounds with optional local `rembg` support.
 - Saves derived cutouts and masks in `.scene_cache/`.
 - Serves a read-only live preview with a layer stack panel.
@@ -122,6 +122,7 @@ Layer operations:
 ```bash
 gimpish layer fit subject --mode fit --percent 75 --anchor center
 gimpish layer transform subject --x 120 --y 80 --scale 0.8 --rotation 5
+gimpish layer rotate headline --ccw 12
 gimpish layer move subject --top
 gimpish layer opacity subject 0.65
 gimpish layer blend subject multiply
@@ -143,6 +144,14 @@ Drawing:
 ```bash
 gimpish draw rect --x 80 --y 80 --w 500 --h 280 --fill "#20242cff"
 gimpish draw ellipse --x 300 --y 160 --w 240 --h 240 --fill "#ff3366ff"
+gimpish draw arrow --from-x 900 --from-y 220 --to-x 650 --to-y 480 \
+  --width 54 --head-length 88 --head-width 112 --color "#e61e2dff"
+gimpish draw text "Gradient Text" --x 500 --y 145 --align center \
+  --font "Helvetica Neue" --size 96 --weight 800 \
+  --gradient-stops "0:#f97316ff, 1:#38bdf8ff" \
+  --stroke "#ffffffff" --stroke-width 4 \
+  --shadow-color "#00000099" --shadow-angle 45 \
+  --shadow-distance 18 --shadow-blur 10
 gimpish draw gradient --kind linear --anchor top-left \
   --stops "0:#000000cc, 1:#00000000"
 gimpish draw alpha-gradient --color "#000000" --from 0.75 --to 0 \
@@ -162,6 +171,9 @@ to use a different file.
 - Canvas-space transforms: `x`, `y`, `scale`, and `rotation`.
 - Optional masks: cutout, image, or shape.
 - Shape and gradient definitions.
+- Arrow definitions with canvas-space tail and tip coordinates.
+- Text definitions with font, size, weight, style, fill/gradient, stroke,
+  shadow, alignment, line height, letter spacing, and rotation.
 
 Example layer:
 
@@ -196,7 +208,8 @@ src/gimpish/
 Other useful files:
 
 - `DESIGN.md`: architecture and rationale.
-- `examples/`: sanitized scene files that use only generated shapes and gradients.
+- `examples/`: sanitized scene files that use only generated shapes, gradients,
+  arrows, and text.
 - `scene.json`: default local working scene path, ignored by git.
 
 Local working scenes are intentionally ignored by default. Commit only sanitized
@@ -217,8 +230,7 @@ examples under `examples/`.
 - Background removal uses `rembg`; text-prompted or SAM-style object selection is
   not implemented yet.
 - Masks support one mask per layer.
-- Text layers, adjustment layers, filters, and GUI transforms are not in the v1
-  command surface.
+- Adjustment layers, filters, and GUI transforms are not in the v1 command surface.
 - The live preview server watches the scene directory, so very noisy directories
   can trigger extra refreshes.
 

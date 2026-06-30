@@ -67,7 +67,7 @@ class Layer:
     """A single layer. `type` discriminates the payload fields used."""
 
     id: str
-    type: Literal["image", "shape", "gradient"]
+    type: Literal["image", "shape", "gradient", "arrow", "text"]
     name: str = ""
     opacity: float = 1.0
     blend: BlendMode = "normal"
@@ -87,6 +87,12 @@ class Layer:
 
     # gradient
     gradient: Optional[dict[str, Any]] = None
+
+    # arrow
+    arrow: Optional[dict[str, Any]] = None
+
+    # text
+    text: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -109,6 +115,10 @@ class Layer:
             d["stroke_width"] = self.stroke_width
         elif self.type == "gradient":
             d["gradient"] = self.gradient
+        elif self.type == "arrow":
+            d["arrow"] = self.arrow
+        elif self.type == "text":
+            d["text"] = self.text
         return d
 
     @staticmethod
@@ -131,6 +141,8 @@ class Layer:
             stroke=d.get("stroke"),
             stroke_width=d.get("stroke_width", 0.0),
             gradient=d.get("gradient"),
+            arrow=d.get("arrow"),
+            text=d.get("text"),
         )
 
 

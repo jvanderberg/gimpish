@@ -44,7 +44,7 @@ agent-verifiable previews, fully local.** That's gimpish.
 - Remove background of a layer (rembg) → cutout mask.
 - Mask a layer (from an image or a shape).
 - Scale / offset / reorder layers, set opacity / blend mode.
-- Draw primitives (rect, ellipse) and gradients as first-class layers.
+- Draw primitives (rect, ellipse, arrows), gradients, and styled text as first-class layers.
 - Preview (quick, downscaled) and render/export (any resolution) to png/jpg/webp.
 - Save/load scene state as a JSON file referencing source images.
 - A live web preview server (React) showing the composite + layer stack.
@@ -55,7 +55,7 @@ agent-verifiable previews, fully local.** That's gimpish.
 - A resident model daemon. Plain per-call CLI; eat rembg cold start once. Daemon is v2.
 - MCP server. The CLI is the substrate; an MCP wrapper is a thin later layer.
 - Editing from the web UI (read-only preview to start).
-- Free-transform rotation UX, text layers, filters/adjustments beyond gradients.
+- Free-transform rotation UX and filters/adjustments beyond gradients/text styling.
 
 ---
 
@@ -152,6 +152,9 @@ JSON is the wire format and the agent's state representation. Positions and size
 - `image` — references a `source` path; optional `mask`.
 - `shape` — `rect` | `ellipse`, with `rect` bounds, `fill`, `stroke`, `stroke_width`.
 - `gradient` — `linear` | `radial`, `anchor` or `angle`, `stops[]`.
+- `arrow` — canvas-space tail/tip coordinates, fill color, width, head size, stroke.
+- `text` — content, position, font, size, weight/style, fill color or gradient,
+  stroke, drop shadow, line height, letter spacing, alignment, rotation.
 
 ### Masks
 A `mask` on a layer is one of:
@@ -228,6 +231,12 @@ gimpish layer delete    <id>
 ```
 gimpish draw rect     --x --y --w --h --fill "#rrggbbaa" [--stroke "#..."] [--stroke-width N]
 gimpish draw ellipse  --x --y --w --h --fill "#rrggbbaa" [--stroke "#..."] [--stroke-width N]
+gimpish draw arrow    --from-x --from-y --to-x --to-y [--color "#..."] [--width N]
+gimpish draw text     TEXT --x --y [--font NAME] [--size N] [--weight W] \
+                      [--fill "#..."] [--gradient-stops "0:#..., 1:#..."] \
+                      [--stroke "#..."] [--stroke-width N] \
+                      [--shadow-color "#..."] [--shadow-angle DEG] \
+                      [--shadow-distance N] [--shadow-blur N]
 gimpish draw gradient --kind linear|radial [--anchor top-left|...] [--angle DEG] \
                       --stops "0:#000000ff, 1:#00000000" [--over <id>]
 ```

@@ -1,7 +1,7 @@
 # Example scenes
 
-These scenes are safe to publish. They use only generated shape and gradient
-layers, with no local source images or cached cutouts.
+These scenes are safe to publish. They use only generated shape, gradient, arrow,
+and text layers, with no local source images or cached cutouts.
 
 Render one with:
 
