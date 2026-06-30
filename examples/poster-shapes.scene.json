@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 1080,
+    "height": 1080,
+    "background": "#f2efe5ff"
+  },
+  "layers": [
+    {
+      "id": "background-band",
+      "type": "gradient",
+      "name": "background-band",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "gradient": {
+        "kind": "linear",
+        "angle": 45,
+        "stops": [
+          {
+            "at": 0,
+            "color": "#0f2738ff"
+          },
+          {
+            "at": 0.52,
+            "color": "#0f2738ff"
+          },
+          {
+            "at": 0.53,
+            "color": "#f2efe500"
+          },
+          {
+            "at": 1,
+            "color": "#f2efe500"
+          }
+        ]
+      }
+    },
+    {
+      "id": "red-block",
+      "type": "shape",
+      "name": "red-block",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "rect",
+      "rect": {
+        "x": 130,
+        "y": 145,
+        "w": 360,
+        "h": 520
+      },
+      "fill": "#d84b37ff",
+      "stroke": null,
+      "stroke_width": 0
+    },
+    {
+      "id": "gold-disc",
+      "type": "shape",
+      "name": "gold-disc",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "ellipse",
+      "rect": {
+        "x": 500,
+        "y": 290,
+        "w": 330,
+        "h": 330
+      },
+      "fill": "#e5b642ff",
+      "stroke": "#f2efe5ff",
+      "stroke_width": 14
+    },
+    {
+      "id": "ink-line",
+      "type": "shape",
+      "name": "ink-line",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "rect",
+      "rect": {
+        "x": 310,
+        "y": 735,
+        "w": 560,
+        "h": 44
+      },
+      "fill": "#10212cff",
+      "stroke": null,
+      "stroke_width": 0
+    }
+  ]
+}

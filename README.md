@@ -93,7 +93,7 @@ event over WebSocket and the browser refreshes the image.
 Use a different scene or port:
 
 ```bash
-gimpish serve --scene scratch/scene.json --port 8766
+gimpish serve --scene examples/radial-badge.scene.json --port 8766
 ```
 
 ## Command overview
@@ -196,8 +196,11 @@ src/gimpish/
 Other useful files:
 
 - `DESIGN.md`: architecture and rationale.
-- `scratch/`: demo scenes, generated outputs, and local test assets.
-- `scene.json`: current root scene.
+- `examples/`: sanitized scene files that use only generated shapes and gradients.
+- `scene.json`: default local working scene path, ignored by git.
+
+Local working scenes are intentionally ignored by default. Commit only sanitized
+examples under `examples/`.
 
 ## Design principles
 
@@ -229,10 +232,10 @@ gimpish --help
 gimpish preview --scene scene.json --out /tmp/gimpish-preview.png --max 512
 ```
 
-Start a preview server against the scratch demo:
+Start a preview server against an included example:
 
 ```bash
-gimpish serve --scene scratch/scene.json --port 8766
+gimpish serve --scene examples/radial-badge.scene.json --port 8766
 ```
 
 Then fetch:
@@ -241,4 +244,11 @@ Then fetch:
 curl -fsS http://127.0.0.1:8766/api/scene
 curl -fsS -o /tmp/gimpish-server-preview.png \
   'http://127.0.0.1:8766/api/preview.png?max=512'
+```
+
+Render an included example scene:
+
+```bash
+gimpish preview --scene examples/radial-badge.scene.json \
+  --out /tmp/gimpish-example.png --max 768
 ```

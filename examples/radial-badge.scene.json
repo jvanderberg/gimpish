@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": "transparent"
+  },
+  "layers": [
+    {
+      "id": "base",
+      "type": "shape",
+      "name": "base",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "rect",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "fill": "#285b8fff",
+      "stroke": null,
+      "stroke_width": 0
+    },
+    {
+      "id": "shade-top-left",
+      "type": "gradient",
+      "name": "shade-top-left",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "gradient": {
+        "kind": "radial",
+        "anchor": "top-left",
+        "stops": [
+          {
+            "at": 0,
+            "color": "#00121fcc"
+          },
+          {
+            "at": 1,
+            "color": "#00121f00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "warm-corner",
+      "type": "gradient",
+      "name": "warm-corner",
+      "opacity": 0.9,
+      "blend": "screen",
+      "visible": true,
+      "gradient": {
+        "kind": "radial",
+        "anchor": "bottom-right",
+        "stops": [
+          {
+            "at": 0,
+            "color": "#ff7a3d88"
+          },
+          {
+            "at": 1,
+            "color": "#ff7a3d00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "badge-ring",
+      "type": "shape",
+      "name": "badge-ring",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "ellipse",
+      "rect": {
+        "x": 470,
+        "y": 190,
+        "w": 340,
+        "h": 340
+      },
+      "fill": "#f7f4e8ff",
+      "stroke": "#ff8a2aff",
+      "stroke_width": 16
+    },
+    {
+      "id": "badge-core",
+      "type": "shape",
+      "name": "badge-core",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "shape": "ellipse",
+      "rect": {
+        "x": 525,
+        "y": 245,
+        "w": 230,
+        "h": 230
+      },
+      "fill": "#2f64dfff",
+      "stroke": null,
+      "stroke_width": 0
+    }
+  ]
+}

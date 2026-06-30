@@ -5,8 +5,10 @@ __pycache__/
 build/
 dist/
 .scene_cache/
+downloads/
 scene.json
 preview.png
+scene_preview.png
 out.png
 *.swp
 .DS_Store
