@@ -1,0 +1,30 @@
+{
+  "name": "gimpish-monorepo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "biome check . && npm run typecheck",
+    "check:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "npm run build -w @gimpish/web",
+    "dev": "npm run dev -w @gimpish/web"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "sharp@0.34.5": true
+  }
+}

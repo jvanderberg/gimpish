@@ -1,0 +1,16 @@
+{
+  "name": "@gimpish/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "sharp": "^0.34.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.1.0"
+  }
+}
