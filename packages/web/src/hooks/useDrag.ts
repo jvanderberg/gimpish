@@ -2,6 +2,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
+  useRef,
   useState,
 } from "react";
 import type { LayerBox, TransformDelta } from "../api";
@@ -62,6 +63,9 @@ export interface DragHandlers {
  */
 export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragArgs): DragHandlers {
   const [drag, setDrag] = useState<DragState | null>(null);
+  // True when the current gesture started with a selection already active,
+  // so a stationary click can deselect instead of committing a no-op move.
+  const downOnSelected = useRef(false);
 
   const startDrag = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>, box: LayerBox, pt: Point) => {
@@ -126,12 +130,14 @@ export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragA
       if (!svg) return;
       const pt = clientToCanvas(svg, e.clientX, e.clientY);
       // A selection owns the drag: grab anywhere to move it, or grab a
-      // handle to rotate/scale. Canvas clicks never re-hit-test or
-      // deselect while something is already selected.
+      // handle to rotate/scale. Canvas clicks never re-hit-test while
+      // something is selected; a stationary click deselects on release.
       if (selBox) {
+        downOnSelected.current = true;
         startDrag(e, selBox, pt);
         return;
       }
+      downOnSelected.current = false;
       // Nothing selected yet: click a layer to select and start manipulating it.
       const id = hitTest(boxes, pt);
       if (!id) return;
@@ -172,16 +178,22 @@ export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragA
     (e: ReactPointerEvent<SVGSVGElement>) => {
       const svg = svgRef.current;
       if (svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
-      setDrag((d) => {
-        if (d) {
-          if (d.mode === "rotate") onCommit(d.id, { drot: d.cur.rotation - d.orig.rotation });
-          else if (d.mode === "scale") onCommit(d.id, { scale: d.cur.scale });
-          else onCommit(d.id, { dx: d.cur.cx - d.orig.cx, dy: d.cur.cy - d.orig.cy });
+      if (drag) {
+        if (drag.mode === "rotate") {
+          onCommit(drag.id, { drot: drag.cur.rotation - drag.orig.rotation });
+        } else if (drag.mode === "scale") {
+          onCommit(drag.id, { scale: drag.cur.scale });
+        } else {
+          const dx = drag.cur.cx - drag.orig.cx;
+          const dy = drag.cur.cy - drag.orig.cy;
+          // 3 screen px of slop distinguishes a click from a drag.
+          if (downOnSelected.current && Math.hypot(dx, dy) <= 3 * k) setSel(null);
+          else onCommit(drag.id, { dx, dy });
         }
-        return null;
-      });
+      }
+      setDrag(null);
     },
-    [svgRef, onCommit],
+    [svgRef, drag, onCommit, setSel, k],
   );
 
   return { drag, onPointerDown, onPointerMove, onPointerUp };

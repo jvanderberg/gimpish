@@ -246,7 +246,7 @@ export function App() {
         scene={scene}
         layers={layers}
         sel={sel}
-        onSelect={setSel}
+        onSelect={(id) => setSel((s) => (s === id ? null : id))}
         onDelete={onDelete}
         onReorder={onReorder}
         err={err}
