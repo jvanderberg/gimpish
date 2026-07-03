@@ -304,19 +304,18 @@ If this runs end-to-end and the preview looks right, v1 core is done.
 
 ## 9. Tech stack
 
-| Concern              | Choice                                            |
-|----------------------|---------------------------------------------------|
-| Language             | Python 3.11+                                       |
-| Compositing          | `pyvips` (libvips) — native, fast, no GPU needed   |
-| Background removal    | `rembg` (U²-Net) — CPU, ~0.5–2 s/image            |
-| Semantic selection (v2) | SAM2 / Grounding DINO via PyTorch MPS, or CoreML |
-| CLI                  | `typer` (or argparse) subcommands                  |
-| Web server           | FastAPI + WebSocket, `watchfiles` for file-watch   |
-| Web UI               | React + Vite                                       |
-| Scene format         | JSON (versioned)                                   |
+| Concern              | Choice                                              |
+|----------------------|-----------------------------------------------------|
+| Language             | TypeScript (Node 24, native type stripping — no build) |
+| Compositing          | `sharp` (libvips) — native, fast, no GPU needed      |
+| Background removal    | U²-Net via `onnxruntime-node` (rembg's model/cache)  |
+| Semantic selection (v2) | SAM2 / Grounding DINO via ONNX or CoreML           |
+| CLI                  | `commander` subcommands                              |
+| Web server           | Fastify + WebSocket, `chokidar` for file-watch       |
+| Web UI               | React + Vite + TypeScript                            |
+| Scene schema         | JSON (versioned), validated with `zod`               |
 
-Local-first: everything runs offline after first model download. PyTorch/SAM2 only pulled
-in when v2 semantic selection lands; v1 needs only `pyvips` + `rembg`.
+Local-first: everything runs offline after first model download.
 
 ---
 

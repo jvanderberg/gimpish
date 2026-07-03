@@ -1,9 +1,5 @@
-.venv/
-__pycache__/
-*.pyc
-*.egg-info/
-build/
-dist/
+node_modules/
+packages/web/dist/
 .scene_cache/
 downloads/
 scene.json
@@ -12,6 +8,5 @@ scene_preview.png
 out.png
 *.swp
 .DS_Store
-node_modules/
-web/dist/
 scratch/
+.venv/

@@ -3,9 +3,10 @@
 Agent-native image composition for LLM workflows.
 
 `gimpish` is a local-first image editor built around a stable command-line API and
-a live browser preview. An agent edits a plain `scene.json` through semantic verbs
+a live browser editor. An agent edits a plain `scene.json` through semantic verbs
 like `add`, `layer fit`, `layer remove-bg`, `draw gradient`, and `export`; a human
-can keep the preview open and see each change as it lands.
+can keep the editor open, watch each change land, and nudge layers directly —
+drag to move, handles to rotate and scale.
 
 The goal is "Photoshop for LLM agents": layers, masks, foreground cutouts,
 primitive drawing, and deterministic rendering without requiring a GUI automation
@@ -14,40 +15,29 @@ loop or a cloud image service.
 ## What it does
 
 - Imports source images as non-destructive layers.
-- Stores all composition state in `scene.json`.
-- Renders through one pyvips pipeline for preview, export, and the web UI.
+- Stores all composition state in `scene.json` (a versioned, zod-validated contract).
+- Renders through one sharp/libvips pipeline for preview, export, and the web UI.
 - Supports image, shape, gradient, arrow, and styled text layers, plus opacity,
   blend modes, and layer ordering.
-- Removes image backgrounds with optional local `rembg` support.
+- Removes image backgrounds locally (U²-Net via onnxruntime; the model is
+  downloaded once to `~/.u2net/u2net.onnx`).
 - Saves derived cutouts and masks in `.scene_cache/`.
-- Serves a read-only live preview with a layer stack panel.
+- Serves a live web editor with a layer panel and direct manipulation:
+  select, drag, rotate, scale — one scene write per gesture.
 
 ## Install
 
-Requirements:
-
-- Python 3.11+
-- libvips
-
-On macOS:
+Requirements: Node 24.18+ (see `.nvmrc`).
 
 ```bash
-brew install vips
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[bg,serve]'
+nvm use
+npm install
+npm run build        # builds the web editor bundle
 ```
 
-Extras:
-
-- `bg`: installs `rembg` and `onnxruntime` for background removal.
-- `serve`: installs FastAPI, Uvicorn, and watchfiles for live preview.
-
-For rendering only:
-
-```bash
-pip install -e .
-```
+Inside the repo the CLI is `npx gimpish` (or `npm link -w gimpish` for a global
+`gimpish`). Node 24 runs the TypeScript sources directly — the CLI and server
+have no build step.
 
 ## Quickstart
 
@@ -72,23 +62,25 @@ gimpish preview --out preview.png
 gimpish export --out final.png
 ```
 
-## Live preview
+## Live editor
 
-Run the preview server beside the scene:
+Run the editor server beside the scene:
 
 ```bash
 gimpish serve
 ```
 
-Then open:
+Then open `http://127.0.0.1:8765`.
 
-```text
-http://127.0.0.1:8765
-```
+The browser renders through the same pipeline as `preview`/`render`/`export`.
+When `scene.json` or `.scene_cache/` changes, the server pushes a reload over
+WebSocket and the view refreshes — CLI edits appear live.
 
-The browser fetches the same render path used by `preview`, `render`, and
-`export`. When `scene.json` or `.scene_cache/` changes, the server pushes a reload
-event over WebSocket and the browser refreshes the image.
+The canvas is directly manipulable: click a layer (on the canvas or in the
+panel) to select it; drag to move, top handle to rotate, corner handles to
+scale. Radial gradients drag their glow center; linear gradients rotate their
+angle. Arrow keys nudge 1px (Shift = 10px). While dragging, the moved layer
+floats as a live ghost sprite; releasing commits a single delta to `scene.json`.
 
 Use a different scene or port:
 
@@ -196,20 +188,17 @@ Source images are never modified. Generated assets live in `.scene_cache/`.
 ## Repository layout
 
 ```text
-src/gimpish/
-  cli.py          Typer command surface for agents and humans
-  scene.py        scene dataclasses and JSON persistence
-  render.py       pyvips renderer shared by preview/export/server
-  bg.py           optional rembg background removal
-  server.py       FastAPI live preview server
-  web/index.html  browser UI for preview and layer stack
+packages/core/    scene schema (zod), geometry, editor ops, sharp render
+                  engine, U²-Net background removal
+packages/cli/     gimpish CLI (commander) + Fastify editor server
+packages/web/     live editor (Vite + React + TypeScript)
+tests/fixtures/   golden renders + scenes for the pixel-parity suite
+examples/         sanitized scene files (shapes, gradients, arrows, text only)
 ```
 
 Other useful files:
 
 - `DESIGN.md`: architecture and rationale.
-- `examples/`: sanitized scene files that use only generated shapes, gradients,
-  arrows, and text.
 - `scene.json`: default local working scene path, ignored by git.
 
 Local working scenes are intentionally ignored by default. Commit only sanitized
@@ -223,44 +212,27 @@ examples under `examples/`.
 - Semantic placement: commands like `fit --percent 75 --anchor center` avoid
   forcing the agent to do canvas arithmetic.
 - Local-first: rendering and background removal run locally.
+- Direct manipulation stays scoped to continuous spatial properties (move,
+  rotate, scale); everything structural or semantic goes through the CLI.
 
 ## Current limitations
 
-- The web preview is read-only.
-- Background removal uses `rembg`; text-prompted or SAM-style object selection is
-  not implemented yet.
+- Background removal is U²-Net saliency; text-prompted or SAM-style object
+  selection is not implemented yet.
 - Masks support one mask per layer.
-- Adjustment layers, filters, and GUI transforms are not in the v1 command surface.
-- The live preview server watches the scene directory, so very noisy directories
-  can trigger extra refreshes.
+- Adjustment layers and filters are not in the command surface.
+- The editor server watches the scene directory, so very noisy directories can
+  trigger extra refreshes.
 
-## Development checks
-
-Basic sanity checks:
+## Development
 
 ```bash
-python -m compileall -q src
-gimpish --help
-gimpish preview --scene scene.json --out /tmp/gimpish-preview.png --max 512
+npm run check       # biome lint/format + tsc across all packages
+npm test            # vitest: model, CLI, server API, and pixel-parity suites
+npm run dev         # vite dev server for the web app (proxies /api to :8765)
+npm run build       # production web bundle (served by gimpish serve)
 ```
 
-Start a preview server against an included example:
-
-```bash
-gimpish serve --scene examples/radial-badge.scene.json --port 8766
-```
-
-Then fetch:
-
-```bash
-curl -fsS http://127.0.0.1:8766/api/scene
-curl -fsS -o /tmp/gimpish-server-preview.png \
-  'http://127.0.0.1:8766/api/preview.png?max=512'
-```
-
-Render an included example scene:
-
-```bash
-gimpish preview --scene examples/radial-badge.scene.json \
-  --out /tmp/gimpish-example.png --max 768
-```
+The renderer's output is pinned by golden fixtures (`tests/fixtures/`); the
+parity suite requires the render pipeline to reproduce them within tight pixel
+tolerances.
