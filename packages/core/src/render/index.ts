@@ -40,10 +40,10 @@ export const BLEND_MODES: Record<string, string> = {
 };
 
 export interface RenderOptions {
-  width?: number;
-  height?: number;
+  width?: number | undefined;
+  height?: number | undefined;
   /** Layer ids to skip — used by the live editor's ghost-drag preview. */
-  hide?: ReadonlySet<string>;
+  hide?: ReadonlySet<string> | undefined;
 }
 
 // ---- decode helpers ---------------------------------------------------------------
@@ -127,10 +127,10 @@ async function loadMaskBand(root: string, mask: Mask, w: number, h: number): Pro
 
 function shapeMaskBand(mask: Mask, w: number, h: number): Buffer {
   const rect = mask.rect ?? { x: 0, y: 0, w, h };
-  const rx = rect.x ?? 0;
-  const ry = rect.y ?? 0;
-  const rw = rect.w ?? w;
-  const rh = rect.h ?? h;
+  const rx = rect["x"] ?? 0;
+  const ry = rect["y"] ?? 0;
+  const rw = rect["w"] ?? w;
+  const rh = rect["h"] ?? h;
   const out = Buffer.alloc(w * h);
 
   if (mask.shape === "ellipse") {
