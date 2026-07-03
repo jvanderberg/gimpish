@@ -12,7 +12,7 @@ web app. Run the CLI as `npx gimpish …`.
 - Don't render + read the image back for changes whose result is obvious (opacity/reorder/rename). Batch mechanical edits, verify visually once at the end.
 
 ## Checks before committing
-- `npm run check` (biome + tsc for all packages) and `npm test` must pass.
+- `npm run check` (biome lint/format + strict tsc for all packages + full vitest suite) must pass.
 - The pixel-parity suite (`packages/core/test/parity.test.ts`) pins the renderer
   to golden fixtures in `tests/fixtures/` — if a render change is intentional,
   regenerate goldens deliberately and say so; never loosen tolerances to make a
