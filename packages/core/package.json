@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "onnxruntime-node": "^1.27.0",
     "sharp": "^0.34.0",
     "zod": "^4.0.0"
   },

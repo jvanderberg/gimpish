@@ -25,6 +25,7 @@
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
-    "sharp@0.34.5": true
+    "sharp@0.34.5": true,
+    "onnxruntime-node@1.27.0": true
   }
 }

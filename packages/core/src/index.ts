@@ -1,3 +1,4 @@
+export * from "./bg.ts";
 export * from "./color.ts";
 export * from "./editor.ts";
 export * from "./geometry.ts";
