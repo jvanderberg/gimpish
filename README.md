@@ -30,14 +30,17 @@ loop or a cloud image service.
 Requirements: Node 24.18+ (see `.nvmrc`).
 
 ```bash
-nvm use
+nvm use              # or any Node 24.18+
 npm install
-npm run build        # builds the web editor bundle
 ```
 
 Inside the repo the CLI is `npx gimpish` (or `npm link -w gimpish` for a global
 `gimpish`). Node 24 runs the TypeScript sources directly — the CLI and server
-have no build step.
+have no build step. Two things are deferred until first use:
+
+- `npm run build` — bundles the web editor; only needed before `gimpish serve`.
+- `gimpish layer remove-bg` — downloads the U²-Net model (~176 MB) to
+  `~/.u2net/u2net.onnx` on first run, then works offline.
 
 ## Quickstart
 
@@ -184,6 +187,33 @@ Example layer:
 ```
 
 Source images are never modified. Generated assets live in `.scene_cache/`.
+
+The file is zod-validated on every load, so editing it directly (by hand or by
+an agent) is as legitimate as using the CLI — malformed edits fail loudly with
+a precise error. Use the CLI for semantic operations (`fit`, `remove-bg`,
+reordering); edit the JSON directly for batch tweaks to existing values.
+
+## Conventions
+
+- **Coordinates** are canvas pixels; the origin is top-left and y grows
+  downward. All positions, sizes, and stroke widths live in this one space —
+  render/export scales the whole canvas, so output resolution never changes
+  the numbers.
+- **Layer order**: array order is paint order. Index `0` is the back layer;
+  the last entry is frontmost. `layer move --up` moves toward the front.
+- **Colors**: `#rgb`, `#rrggbb`, or `#rrggbbaa` (alpha defaults to opaque).
+- **Anchors** (for `fit`, gradients): `top-left`, `top`, `top-right`, `left`,
+  `center`, `right`, `bottom-left`, `bottom`, `bottom-right`.
+- **Blend modes**: `normal`, `multiply`, `screen`, `overlay`, `darken`,
+  `lighten`, `color-dodge`, `color-burn`, `hard-light`, `soft-light`,
+  `difference`, `exclusion`, `add`.
+- **Placement semantics**: an image layer's `transform.x/y` is the top-left
+  corner of the scaled image; `rotation` is clockwise degrees about its
+  center. Text `x/y` is the anchor point (its meaning follows `--align`);
+  arrows use absolute tail/tip coordinates. Prefer `layer fit` over doing
+  placement arithmetic yourself.
+- **Rotation direction**: positive = clockwise everywhere (screen-space
+  y-down); `layer rotate --ccw/--cw` speaks visual direction instead.
 
 ## Repository layout
 
