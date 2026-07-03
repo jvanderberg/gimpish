@@ -183,6 +183,19 @@ export function opacityAction(layerId: string, value: number, opts: { scene: str
   return `${layerId}: opacity=${clamped}`;
 }
 
+export function blurAction(layerId: string, sigma: number, opts: { scene: string }): string {
+  if (sigma < 0) throw new CliError("blur sigma must be >= 0");
+  const doc = loadOrFail(opts.scene);
+  const layer = findLayer(doc.scene, layerId);
+  if (sigma === 0) {
+    layer.blur = undefined;
+  } else {
+    layer.blur = sigma;
+  }
+  saveScene(doc);
+  return `${layerId}: blur=${sigma === 0 ? "off" : g(sigma)}`;
+}
+
 export function blendAction(layerId: string, mode: string, opts: { scene: string }): string {
   if (!(mode in BLEND_MODES)) {
     throw new CliError(
@@ -332,6 +345,14 @@ export function registerLayerCommands(program: Command): void {
       .argument("<id>")
       .argument("<mode>", `one of: ${Object.keys(BLEND_MODES).join(", ")}`),
   ).action((id, mode, opts) => console.log(blendAction(id, mode, opts)));
+
+  sceneOption(
+    layer
+      .command("blur")
+      .description("Gaussian-blur a layer (sigma in canvas pixels; 0 removes).")
+      .argument("<id>")
+      .argument("<sigma>", "Blur sigma in canvas pixels (0 = off).", parseNum),
+  ).action((id, sigma, opts) => console.log(blurAction(id, sigma, opts)));
 
   sceneOption(
     layer

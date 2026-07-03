@@ -220,7 +220,34 @@ async function renderShapeLayer(layer: ShapeLayer): Promise<Placed> {
   return { img, x, y };
 }
 
+/**
+ * Gaussian-blur a placed layer raster. The raster is padded by 3*sigma of
+ * transparency first so the blur spreads outward past the layer bounds.
+ * (sharp premultiplies alpha internally around blur, so transparent-region
+ * colors can't halo into visible edges.)
+ */
+async function blurPlaced(placed: Placed, sigma: number): Promise<Placed> {
+  const pad = Math.ceil(sigma * 3);
+  const blurred = await toRaster(
+    fromRaster(placed.img)
+      .extend({
+        top: pad,
+        bottom: pad,
+        left: pad,
+        right: pad,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .blur(sigma),
+  );
+  return { img: blurred, x: placed.x - pad, y: placed.y - pad };
+}
+
 async function renderLayer(doc: SceneDoc, layer: Layer): Promise<Placed> {
+  const placed = await renderLayerContent(doc, layer);
+  return layer.blur && layer.blur > 0 ? blurPlaced(placed, layer.blur) : placed;
+}
+
+async function renderLayerContent(doc: SceneDoc, layer: Layer): Promise<Placed> {
   switch (layer.type) {
     case "image":
       return renderImageLayer(doc, layer);

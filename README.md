@@ -121,6 +121,7 @@ gimpish layer rotate headline --ccw 12
 gimpish layer move subject --top
 gimpish layer opacity subject 0.65
 gimpish layer blend subject multiply
+gimpish layer blur subject 8         # gaussian sigma in canvas px; 0 removes
 gimpish layer visible subject false
 gimpish layer delete subject
 ```
@@ -250,7 +251,8 @@ examples under `examples/`.
 - Background removal is U²-Net saliency; text-prompted or SAM-style object
   selection is not implemented yet.
 - Masks support one mask per layer.
-- Adjustment layers and filters are not in the command surface.
+- Per-layer gaussian blur is the only filter; adjustment layers (curves,
+  color) are not in the command surface.
 - The editor server watches the scene directory, so very noisy directories can
   trigger extra refreshes.
 

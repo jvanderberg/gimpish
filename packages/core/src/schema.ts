@@ -95,6 +95,7 @@ const LayerBase = {
   opacity: z.number().default(1),
   blend: z.string().default("normal"),
   visible: z.boolean().default(true),
+  blur: z.number().nonnegative().optional(), // gaussian sigma in canvas pixels
 };
 
 const ImageLayerSchema = z.object({
