@@ -11,3 +11,7 @@ out.png
 .DS_Store
 scratch/
 .venv/
+packages/cli/dist/
+packages/cli/README.md
+packages/cli/LICENSE
+*.tgz

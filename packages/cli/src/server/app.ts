@@ -38,8 +38,14 @@ import { BUNDLE_EXT, createBundle, extractBundle } from "../bundle.ts";
 import { SceneHistory } from "./history.ts";
 import { importImage } from "./imports.ts";
 
-/** Built web client, served when present (repo: packages/web/dist). */
-const WEB_DIST = path.resolve(import.meta.dirname, "../../../web/dist");
+/**
+ * Built web client, served when present: beside the bundle in a published
+ * install (dist/web), at the workspace build output when run from the repo.
+ */
+const WEB_DIST = [
+  path.resolve(import.meta.dirname, "web"),
+  path.resolve(import.meta.dirname, "../../../web/dist"),
+].find((dir) => existsSync(path.join(dir, "index.html")));
 
 const WATCH_DEBOUNCE_MS = 80;
 
@@ -167,7 +173,7 @@ export function createApp(scenePath: string): FastifyInstance {
 
   // ---- static client --------------------------------------------------------------
 
-  if (existsSync(path.join(WEB_DIST, "index.html"))) {
+  if (WEB_DIST) {
     app.register(fastifyStatic, { root: WEB_DIST });
   } else {
     app.get("/", async (_req, reply) =>

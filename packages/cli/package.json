@@ -1,22 +1,52 @@
 {
   "name": "gimpish",
   "version": "0.1.0",
-  "private": true,
+  "description": "Agent-native image composition: a CLI + scene.json contract + live browser editor, built for LLM workflows. Layers, masks, local background removal, deterministic rendering.",
+  "keywords": [
+    "image",
+    "compositing",
+    "layers",
+    "cli",
+    "llm",
+    "agent",
+    "background-removal",
+    "image-editing",
+    "canvas"
+  ],
+  "license": "MIT",
+  "author": "Josh Vanderberg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jvanderberg/gimpish.git"
+  },
+  "homepage": "https://github.com/jvanderberg/gimpish#readme",
+  "bugs": "https://github.com/jvanderberg/gimpish/issues",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "bin": {
     "gimpish": "./bin/gimpish.js"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
+  "scripts": {
+    "prepack": "node scripts/prepack.mjs"
   },
   "dependencies": {
     "@fastify/static": "^8.0.0",
     "@fastify/websocket": "^11.0.0",
-    "@gimpish/core": "*",
     "chokidar": "^4.0.0",
     "commander": "^14.0.0",
     "fastify": "^5.0.0",
     "fflate": "^0.8.3",
+    "onnxruntime-node": "^1.27.0",
+    "sharp": "^0.34.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "sharp": "^0.34.0"
+    "esbuild": "^0.28.0"
   }
 }
