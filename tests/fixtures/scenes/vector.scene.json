@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 640,
+    "height": 420,
+    "background": "transparent"
+  },
+  "layers": [
+    {
+      "name": "bg",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "bg",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 640.0,
+        "h": 420.0
+      },
+      "fill": "#1b2432ff",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "ellipse-stroked",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "ellipse-stroked",
+      "type": "shape",
+      "shape": "ellipse",
+      "rect": {
+        "x": 40.0,
+        "y": 40.0,
+        "w": 200.0,
+        "h": 140.0
+      },
+      "fill": "#ff3366ff",
+      "stroke": "#ffffffff",
+      "stroke_width": 8.0
+    },
+    {
+      "name": "ellipse-hollow",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "ellipse-hollow",
+      "type": "shape",
+      "shape": "ellipse",
+      "rect": {
+        "x": 280.0,
+        "y": 40.0,
+        "w": 140.0,
+        "h": 140.0
+      },
+      "fill": null,
+      "stroke": "#7fb7ffff",
+      "stroke_width": 10.0
+    },
+    {
+      "name": "rect-stroked",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "rect-stroked",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 460.0,
+        "y": 40.0,
+        "w": 140.0,
+        "h": 100.0
+      },
+      "fill": "#2bb67388",
+      "stroke": "#ffd24dff",
+      "stroke_width": 5.0
+    },
+    {
+      "name": "arrow-outlined",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "arrow-outlined",
+      "type": "arrow",
+      "arrow": {
+        "from_x": 60.0,
+        "from_y": 380.0,
+        "to_x": 300.0,
+        "to_y": 240.0,
+        "color": "#e61e2dff",
+        "width": 30.0,
+        "head_length": 60.0,
+        "head_width": 72.0,
+        "outline": "#ffffffff",
+        "outline_width": 8.0
+      }
+    },
+    {
+      "name": "arrow-plain",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "arrow-plain",
+      "type": "arrow",
+      "arrow": {
+        "from_x": 380.0,
+        "from_y": 380.0,
+        "to_x": 590.0,
+        "to_y": 300.0,
+        "color": "#7fb7ffff",
+        "width": 14.0,
+        "head_length": 34.0,
+        "head_width": 34.0,
+        "outline": null,
+        "outline_width": 0.0
+      }
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 720,
+    "height": 480,
+    "background": "transparent"
+  },
+  "layers": [
+    {
+      "name": "base",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "base",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 720.0,
+        "h": 480.0
+      },
+      "fill": "#243044ff",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "plain",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "plain",
+      "type": "image",
+      "source": "../assets/photo.png",
+      "transform": {
+        "x": 20.0,
+        "y": 20.0,
+        "scale": 0.5,
+        "rotation": 0.0
+      },
+      "mask": null
+    },
+    {
+      "name": "rot",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "rot",
+      "type": "image",
+      "source": "../assets/photo.png",
+      "transform": {
+        "x": 540.0,
+        "y": 40.0,
+        "scale": 0.6,
+        "rotation": 30.0
+      },
+      "mask": null
+    },
+    {
+      "name": "neg",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "neg",
+      "type": "image",
+      "source": "../assets/sprite.png",
+      "transform": {
+        "x": -60.0,
+        "y": -40.0,
+        "scale": 1.2,
+        "rotation": 0.0
+      },
+      "mask": null
+    },
+    {
+      "name": "cut",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "cut",
+      "type": "image",
+      "source": "../assets/photo.png",
+      "transform": {
+        "x": 30.0,
+        "y": 220.0,
+        "scale": 0.7,
+        "rotation": 0.0
+      },
+      "mask": {
+        "kind": "cutout",
+        "cache": "../assets/cutout.png",
+        "feather": 0.0,
+        "invert": false
+      }
+    },
+    {
+      "name": "imask",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "imask",
+      "type": "image",
+      "source": "../assets/photo.png",
+      "transform": {
+        "x": 300.0,
+        "y": 220.0,
+        "scale": 0.7,
+        "rotation": 0.0
+      },
+      "mask": {
+        "kind": "image",
+        "source": "../assets/gray-mask.png",
+        "feather": 4.0,
+        "invert": false
+      }
+    },
+    {
+      "name": "smask",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "smask",
+      "type": "image",
+      "source": "../assets/photo.png",
+      "transform": {
+        "x": 520.0,
+        "y": 250.0,
+        "scale": 0.55,
+        "rotation": 0.0
+      },
+      "mask": {
+        "kind": "shape",
+        "shape": "ellipse",
+        "rect": {
+          "x": 90.0,
+          "y": 60.0,
+          "w": 140.0,
+          "h": 120.0
+        },
+        "feather": 0.0,
+        "invert": true
+      }
+    },
+    {
+      "name": "rotrect",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "rotrect",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 300.0,
+        "y": 60.0,
+        "w": 120.0,
+        "h": 80.0,
+        "rotation": -20.0
+      },
+      "fill": "#2bb673aa",
+      "stroke": "#ffffffff",
+      "stroke_width": 6.0
+    }
+  ]
+}

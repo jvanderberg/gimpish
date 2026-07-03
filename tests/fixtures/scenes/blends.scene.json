@@ -1,0 +1,284 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 660,
+    "height": 400,
+    "background": "#202228ff"
+  },
+  "layers": [
+    {
+      "name": "backdrop",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "backdrop",
+      "type": "gradient",
+      "gradient": {
+        "kind": "linear",
+        "angle": 0,
+        "stops": [
+          {
+            "at": 0,
+            "color": "#10306080"
+          },
+          {
+            "at": 1,
+            "color": "#c04010ff"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sw-normal",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "sw-normal",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 20,
+        "y": 20,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-multiply",
+      "opacity": 1.0,
+      "blend": "multiply",
+      "visible": true,
+      "id": "sw-multiply",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 145,
+        "y": 20,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-screen",
+      "opacity": 1.0,
+      "blend": "screen",
+      "visible": true,
+      "id": "sw-screen",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 270,
+        "y": 20,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-overlay",
+      "opacity": 1.0,
+      "blend": "overlay",
+      "visible": true,
+      "id": "sw-overlay",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 395,
+        "y": 20,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-darken",
+      "opacity": 1.0,
+      "blend": "darken",
+      "visible": true,
+      "id": "sw-darken",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 520,
+        "y": 20,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-lighten",
+      "opacity": 1.0,
+      "blend": "lighten",
+      "visible": true,
+      "id": "sw-lighten",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 20,
+        "y": 115,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-color-dodge",
+      "opacity": 1.0,
+      "blend": "color-dodge",
+      "visible": true,
+      "id": "sw-color-dodge",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 145,
+        "y": 115,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-color-burn",
+      "opacity": 1.0,
+      "blend": "color-burn",
+      "visible": true,
+      "id": "sw-color-burn",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 270,
+        "y": 115,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-hard-light",
+      "opacity": 1.0,
+      "blend": "hard-light",
+      "visible": true,
+      "id": "sw-hard-light",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 395,
+        "y": 115,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-soft-light",
+      "opacity": 1.0,
+      "blend": "soft-light",
+      "visible": true,
+      "id": "sw-soft-light",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 520,
+        "y": 115,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-difference",
+      "opacity": 1.0,
+      "blend": "difference",
+      "visible": true,
+      "id": "sw-difference",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 20,
+        "y": 210,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-exclusion",
+      "opacity": 1.0,
+      "blend": "exclusion",
+      "visible": true,
+      "id": "sw-exclusion",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 145,
+        "y": 210,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "sw-add",
+      "opacity": 1.0,
+      "blend": "add",
+      "visible": true,
+      "id": "sw-add",
+      "type": "shape",
+      "shape": "rect",
+      "rect": {
+        "x": 270,
+        "y": 210,
+        "w": 105.0,
+        "h": 75.0
+      },
+      "fill": "#7fb7ffcc",
+      "stroke": null,
+      "stroke_width": 0.0
+    },
+    {
+      "name": "half",
+      "opacity": 0.35,
+      "blend": "normal",
+      "visible": true,
+      "id": "half",
+      "type": "shape",
+      "shape": "ellipse",
+      "rect": {
+        "x": 200.0,
+        "y": 240.0,
+        "w": 260.0,
+        "h": 120.0
+      },
+      "fill": "#ffffffff",
+      "stroke": null,
+      "stroke_width": 0.0
+    }
+  ]
+}

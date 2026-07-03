@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 640,
+    "height": 400,
+    "background": "#101318ff"
+  },
+  "layers": [
+    {
+      "name": "lin-angle",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "lin-angle",
+      "type": "gradient",
+      "gradient": {
+        "kind": "linear",
+        "angle": 27.0,
+        "stops": [
+          {
+            "at": 0.0,
+            "color": "#000000ff"
+          },
+          {
+            "at": 0.4,
+            "color": "#d95fa9aa"
+          },
+          {
+            "at": 1.0,
+            "color": "#00000000"
+          }
+        ]
+      }
+    },
+    {
+      "name": "lin-anchor",
+      "opacity": 0.7,
+      "blend": "screen",
+      "visible": true,
+      "id": "lin-anchor",
+      "type": "gradient",
+      "gradient": {
+        "kind": "linear",
+        "anchor": "bottom-left",
+        "stops": [
+          {
+            "at": 0.0,
+            "color": "#2bb673ff"
+          },
+          {
+            "at": 1.0,
+            "color": "#2bb67300"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rad-anchor",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "rad-anchor",
+      "type": "gradient",
+      "gradient": {
+        "kind": "radial",
+        "anchor": "top-right",
+        "stops": [
+          {
+            "at": 0.0,
+            "color": "#7fb7ffee"
+          },
+          {
+            "at": 0.5,
+            "color": "#7fb7ff55"
+          },
+          {
+            "at": 1.0,
+            "color": "#7fb7ff00"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rad-center",
+      "opacity": 1.0,
+      "blend": "normal",
+      "visible": true,
+      "id": "rad-center",
+      "type": "gradient",
+      "gradient": {
+        "kind": "radial",
+        "center": [
+          0.3,
+          0.65
+        ],
+        "stops": [
+          {
+            "at": 0.0,
+            "color": "#ffd24dcc"
+          },
+          {
+            "at": 1.0,
+            "color": "#ffd24d00"
+          }
+        ]
+      }
+    }
+  ]
+}
