@@ -38,6 +38,7 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative; /* anchors .drop-overlay and .toasts */
 }
 
 .topbar {
@@ -77,8 +78,15 @@ body {
   background: #c44;
 }
 
-.btn {
+.topbar .actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-block;
   background: #2a2d35;
   border: 1px solid var(--line);
   color: var(--txt);
@@ -86,10 +94,95 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  user-select: none;
 }
 
 .btn:hover {
   border-color: var(--accent);
+}
+
+.dl {
+  position: relative;
+}
+
+.dl summary {
+  list-style: none;
+}
+
+.dl summary::-webkit-details-marker {
+  display: none;
+}
+
+.dl-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  z-index: 20;
+}
+
+.dl-menu a {
+  display: block;
+  color: var(--txt);
+  text-decoration: none;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.dl-menu a:hover {
+  background: #243056;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(22, 23, 27, 0.72);
+  border: 2px dashed var(--accent);
+  border-radius: 4px;
+  color: var(--txt);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.toasts {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid #46c46a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  max-width: 480px;
+}
+
+.toast.err {
+  border-left-color: #c44;
+  color: #ff9a9a;
 }
 
 .canvas-wrap {
@@ -189,14 +282,18 @@ body {
   flex: 1;
 }
 
+.layer-row {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
 .layer {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 16px;
+  padding: 10px 34px 10px 16px; /* right gutter for the × button */
   border: none;
-  border-bottom: 1px solid var(--line);
   background: none;
   color: inherit;
   font: inherit;
@@ -204,8 +301,21 @@ body {
   cursor: pointer;
 }
 
-.layer.hidden {
+.layer-row.hidden .layer {
   opacity: 0.45;
+}
+
+.layer-row.dragging {
+  opacity: 0.4;
+}
+
+/* Reorder insertion indicator (gap the drop will land in). */
+.layer-row.drop-above {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.layer-row.drop-below {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .swatch {
@@ -221,17 +331,47 @@ body {
   border: 1px solid var(--line);
 }
 
-.layer.sel {
+.layer-row.sel {
   background: #243056;
 }
 
-.layer.sel .swatch {
+.layer-row.sel .swatch {
   border-color: var(--accent);
 }
 
 .layer:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
+}
+
+.del {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.layer-row:hover .del,
+.layer-row.sel .del,
+.del:focus-visible {
+  opacity: 1;
+}
+
+.del:hover {
+  color: #ff8080;
+  border-color: var(--line);
+  background: #2a2d35;
 }
 
 .layer .info {

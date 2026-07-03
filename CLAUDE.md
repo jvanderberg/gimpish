@@ -61,7 +61,11 @@ existing values.
   (opacity/reorder/rename). Batch mechanical edits, verify visually once at
   the end.
 - For a human in the loop, `npx gimpish serve` gives a live browser editor at
-  :8765 (select/drag/rotate/scale writes back to scene.json).
+  :8765 (select/drag/rotate/scale writes back to scene.json). Files the human
+  drags into the editor are saved as `assets/<slugged-filename>.<ext>` and
+  appear as a new top layer whose id is the slugged filename (e.g.
+  `My Photo.PNG` → layer `my-photo`, file `assets/my-photo.png`) — check
+  `npx gimpish layers` after the user says they dropped something in.
 
 ## Checks before committing
 

@@ -7,7 +7,7 @@
  * pipeline shape as the original Python engine, validated by the golden fixtures.
  */
 
-import { statSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import type { SceneDoc } from "../doc.ts";
@@ -78,6 +78,14 @@ export async function imageSize(file: string): Promise<{ width: number; height: 
   const size = { width: meta.width, height: meta.height };
   sizeCache.set(key, size);
   return size;
+}
+
+/** Probe in-memory image bytes (throws on undecodable data). Used by uploads. */
+export async function imageMeta(
+  data: Uint8Array,
+): Promise<{ width: number; height: number; format: string }> {
+  const meta = await sharp(data).metadata();
+  return { width: meta.width, height: meta.height, format: meta.format ?? "png" };
 }
 
 // ---- masks ------------------------------------------------------------------------
@@ -354,23 +362,38 @@ export async function rasterToPng(img: Raster): Promise<Buffer> {
   return fromRaster(img).png().toBuffer();
 }
 
+export type EncodeFormat = "png" | "jpg" | "webp";
+
+/** Encode a raster to png/jpg/webp bytes (jpeg is flattened onto white — no alpha). */
+export async function encodeRaster(
+  img: Raster,
+  format: EncodeFormat,
+  quality = 90,
+): Promise<Buffer> {
+  let pipeline = fromRaster(img);
+  if (format === "jpg") {
+    pipeline = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } }).jpeg({ quality });
+  } else if (format === "webp") {
+    pipeline = pipeline.webp({ quality });
+  } else {
+    pipeline = pipeline.png();
+  }
+  return pipeline.toBuffer();
+}
+
+function formatForExt(ext: string): EncodeFormat {
+  if (ext === ".jpg" || ext === ".jpeg") return "jpg";
+  if (ext === ".webp") return "webp";
+  return "png";
+}
+
 export async function renderToFile(
   doc: SceneDoc,
   out: string,
   opts: RenderOptions & { quality?: number } = {},
 ): Promise<string> {
   const img = await renderScene(doc, opts);
-  let pipeline = fromRaster(img);
-  const ext = path.extname(out).toLowerCase();
-  if (ext === ".jpg" || ext === ".jpeg") {
-    pipeline = pipeline
-      .flatten({ background: { r: 255, g: 255, b: 255 } }) // jpeg has no alpha
-      .jpeg({ quality: opts.quality ?? 90 });
-  } else if (ext === ".webp") {
-    pipeline = pipeline.webp({ quality: opts.quality ?? 90 });
-  } else {
-    pipeline = pipeline.png();
-  }
-  await pipeline.toFile(out);
+  const format = formatForExt(path.extname(out).toLowerCase());
+  writeFileSync(out, await encodeRaster(img, format, opts.quality ?? 90));
   return out;
 }

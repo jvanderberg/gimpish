@@ -85,6 +85,36 @@ scale. Radial gradients drag their glow center; linear gradients rotate their
 angle. Arrow keys nudge 1px (Shift = 10px). While dragging, the moved layer
 floats as a live ghost sprite; releasing commits a single delta to `scene.json`.
 
+In the layer panel, drag rows to reorder the stack (an accent line marks where
+the layer will land) and remove a layer with its × button or the Delete key —
+deleting a layer never touches asset files on disk.
+
+### Import (drag-and-drop / upload)
+
+Drop image files anywhere on the stage (or use the **Import** button). Each
+image is saved as `assets/<slugged-name>.<ext>` next to the scene file and
+added as a top layer, scaled down to fit the canvas and centered. The toast
+shows the resulting handle — e.g. `added layer 'team-photo' —
+assets/team-photo.jpg` — which is exactly what an LLM session working the same
+directory sees in `scene.json` (`gimpish layers`), so "the layer called
+team-photo" is unambiguous on both sides. Re-dropping identical bytes reuses
+the asset file; a name collision with different content gets a `-2` suffix.
+
+Dropping a `.gimpish` bundle replaces the whole scene (assets are extracted
+beside the scene file; the previous scene is kept as `scene.json.bak`).
+
+### Download
+
+The **Download** menu exports the full-resolution composite as PNG / JPG /
+WebP, or packs a **`.gimpish` bundle** — a zip of `scene.json` plus every
+referenced asset (sources, mask images, cutout caches), self-contained and
+relocatable. The bundle never encodes your local directory layout: sources are
+flattened into `assets/` (slugged basenames), cutout caches into
+`.scene_cache/`, and the bundled scene is rewritten to match.
+
+Endpoints, for driving the same from scripts: `GET /api/export?format=png|jpg|webp`,
+`GET /api/bundle`, `POST /api/import?name=<filename>` (raw bytes).
+
 Use a different scene or port:
 
 ```bash

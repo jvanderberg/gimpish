@@ -8,6 +8,9 @@ import type { Command } from "commander";
 
 export const DEFAULT_SCENE = "scene.json";
 
+/** Where editor uploads and bundle assets live, relative to the scene file. */
+export const ASSETS_DIR = "assets";
+
 /** User-facing failure: printed without a stack trace, exit code 1. */
 export class CliError extends Error {}
 

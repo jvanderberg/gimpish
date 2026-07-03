@@ -194,6 +194,25 @@ export function layerIndex(scene: Scene, layerId: string): number {
   return i;
 }
 
+/**
+ * Move a layer to paint-order index `to` (0 = back/bottom), interpreted after
+ * the layer is removed — same semantics as `layer move --to`. Returns the
+ * clamped index actually used.
+ */
+export function moveLayerTo(scene: Scene, layerId: string, to: number): number {
+  const i = layerIndex(scene, layerId);
+  const [layer] = scene.layers.splice(i, 1) as [Layer];
+  const j = Math.max(0, Math.min(scene.layers.length, Math.trunc(to)));
+  scene.layers.splice(j, 0, layer);
+  return j;
+}
+
+/** Remove a layer from the scene, returning it. */
+export function removeLayer(scene: Scene, layerId: string): Layer {
+  const [layer] = scene.layers.splice(layerIndex(scene, layerId), 1) as [Layer];
+  return layer;
+}
+
 export function uniqueId(scene: Scene, base: string): string {
   const slugged = slug(base) || "layer";
   const existing = new Set(scene.layers.map((l) => l.id));

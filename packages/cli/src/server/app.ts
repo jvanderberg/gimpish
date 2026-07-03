@@ -12,24 +12,30 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import type { Layer, LayerBox, SceneDoc, Size } from "@gimpish/core";
+import type { EncodeFormat, Layer, LayerBox, SceneDoc, Size } from "@gimpish/core";
 import {
   applyMove,
   applyRotate,
   applyScale,
+  encodeRaster,
   findLayer,
   imageSize,
   layerBox,
   loadScene,
+  moveLayerTo,
   rasterToPng,
+  removeLayer,
   renderLayerSprite,
   renderPreview,
+  renderScene,
   saveScene,
   sceneRoot,
   textBounds,
 } from "@gimpish/core";
 import { watch } from "chokidar";
 import fastify, { type FastifyInstance } from "fastify";
+import { BUNDLE_EXT, createBundle, extractBundle } from "../bundle.ts";
+import { importImage } from "./imports.ts";
 
 /** Built web client, served when present (repo: packages/web/dist). */
 const WEB_DIST = path.resolve(import.meta.dirname, "../../../web/dist");
@@ -84,10 +90,25 @@ async function boxFor(doc: SceneDoc, layer: Layer): Promise<LayerBox | null> {
   return layerBox(doc.scene, layer);
 }
 
+const EXPORT_FORMATS: Record<string, { format: EncodeFormat; mime: string }> = {
+  png: { format: "png", mime: "image/png" },
+  jpg: { format: "jpg", mime: "image/jpeg" },
+  jpeg: { format: "jpg", mime: "image/jpeg" },
+  webp: { format: "webp", mime: "image/webp" },
+};
+
+/** Raised body limit so full-resolution photo uploads fit (fastify default is 1 MB). */
+const BODY_LIMIT = 256 * 1024 * 1024;
+
 export function createApp(scenePath: string): FastifyInstance {
   const scene = path.resolve(scenePath);
-  const app = fastify();
+  const app = fastify({ bodyLimit: BODY_LIMIT });
   const sockets = new Set<WsSocket>();
+
+  // Uploads arrive as raw bytes (application/octet-stream), not multipart.
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_req, body, done) =>
+    done(null, body),
+  );
 
   // One error shape for every route: {error} (scene-load failures, render
   // failures, bad requests all surface the same way to the UI).
@@ -240,6 +261,102 @@ export function createApp(scenePath: string): FastifyInstance {
     }
     saveScene(doc);
     return { ok: true };
+  });
+
+  /** Reorder a layer to an absolute paint-order index (0 = back), `layer move --to` semantics. */
+  app.post<{ Params: { id: string }; Body: { index?: unknown } | null }>(
+    "/api/layer/:id/order",
+    async (req, reply) => {
+      const doc = loadScene(scene);
+      const index = Number(req.body?.index);
+      if (!Number.isFinite(index)) {
+        return reply.code(400).send({ error: "body must be {index: <number>}" });
+      }
+      let moved: number;
+      try {
+        moved = moveLayerTo(doc.scene, req.params.id, index);
+      } catch {
+        return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
+      }
+      saveScene(doc);
+      return { ok: true, index: moved };
+    },
+  );
+
+  /** Delete a layer. Asset files are left on disk (scene sources are never destroyed). */
+  app.delete<{ Params: { id: string } }>("/api/layer/:id", async (req, reply) => {
+    const doc = loadScene(scene);
+    try {
+      removeLayer(doc.scene, req.params.id);
+    } catch {
+      return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
+    }
+    saveScene(doc);
+    return { ok: true };
+  });
+
+  // ---- export / import ---------------------------------------------------------------
+
+  const downloadName = (ext: string) => `${path.parse(scene).name}${ext}`;
+
+  /** Full-resolution render as a browser download (png/jpg/webp). */
+  app.get<{ Querystring: { format?: string; quality?: string } }>(
+    "/api/export",
+    async (req, reply) => {
+      const spec = EXPORT_FORMATS[req.query.format ?? "png"];
+      if (!spec) {
+        return reply.code(400).send({
+          error: `unknown format ${JSON.stringify(req.query.format)}; use png, jpg, or webp`,
+        });
+      }
+      const doc = loadScene(scene);
+      const img = await renderScene(doc);
+      const bytes = await encodeRaster(img, spec.format, toNumber(req.query.quality, 90));
+      return reply
+        .header("Content-Disposition", `attachment; filename="${downloadName(`.${spec.format}`)}"`)
+        .type(spec.mime)
+        .send(bytes);
+    },
+  );
+
+  /** Scene + every referenced asset, zipped as a relocatable .gimpish bundle. */
+  app.get("/api/bundle", async (_req, reply) => {
+    const doc = loadScene(scene);
+    const zip = createBundle(doc);
+    return reply
+      .header("Content-Disposition", `attachment; filename="${downloadName(BUNDLE_EXT)}"`)
+      .type("application/zip")
+      .send(Buffer.from(zip.buffer, zip.byteOffset, zip.byteLength));
+  });
+
+  /**
+   * Upload: raw file bytes, original filename in ?name=. Images land in
+   * assets/ and become a top layer; a .gimpish bundle replaces the whole scene
+   * (previous scene file kept as .bak). The scene write trips the watcher, so
+   * every client reloads.
+   */
+  app.post<{ Querystring: { name?: string }; Body: Buffer }>("/api/import", async (req, reply) => {
+    const name = req.query.name;
+    if (!name) return reply.code(400).send({ error: "missing ?name=<original filename>" });
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return reply.code(400).send({ error: "send raw file bytes as application/octet-stream" });
+    }
+
+    if (name.toLowerCase().endsWith(BUNDLE_EXT)) {
+      try {
+        const loaded = extractBundle(req.body, scene);
+        return { ok: true, kind: "bundle", layers: loaded.layers.length };
+      } catch (err) {
+        return reply.code(400).send({ error: `bundle import failed: ${errorMessage(err)}` });
+      }
+    }
+
+    try {
+      const imported = await importImage(scene, name, req.body);
+      return { ok: true, kind: "image", ...imported };
+    } catch (err) {
+      return reply.code(400).send({ error: `not an importable image: ${errorMessage(err)}` });
+    }
   });
 
   return app;

@@ -2,6 +2,7 @@ node_modules/
 packages/web/dist/
 .scene_cache/
 downloads/
+/assets/
 scene.json
 preview.png
 scene_preview.png

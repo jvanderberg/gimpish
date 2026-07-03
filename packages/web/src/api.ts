@@ -136,3 +136,48 @@ export async function postTransform(id: string, body: TransformDelta): Promise<v
   });
   if (!res.ok) throw new Error(`transform post responded ${res.status}`);
 }
+
+/** Move a layer to an absolute paint-order index (0 = back/bottom). */
+export async function reorderLayer(id: string, index: number): Promise<void> {
+  const res = await fetch(`/api/layer/${encodeURIComponent(id)}/order`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ index }),
+  });
+  if (!res.ok) throw new Error(`reorder responded ${res.status}`);
+}
+
+export async function deleteLayer(id: string): Promise<void> {
+  const res = await fetch(`/api/layer/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete responded ${res.status}`);
+}
+
+// ---- import / export ---------------------------------------------------------------
+
+export type ExportFormat = "png" | "jpg" | "webp";
+
+/** Full-resolution render download (server sets Content-Disposition). */
+export function exportUrl(format: ExportFormat): string {
+  return `/api/export?format=${format}`;
+}
+
+/** Scene + all referenced assets as a relocatable .gimpish zip. */
+export const BUNDLE_URL = "/api/bundle";
+
+export type ImportResult =
+  | { ok: true; kind: "image"; id: string; source: string; width: number; height: number }
+  | { ok: true; kind: "bundle"; layers: number };
+
+/** Upload a dropped/picked file. Images become layers; .gimpish replaces the scene. */
+export async function importFile(file: File): Promise<ImportResult> {
+  const res = await fetch(`/api/import?name=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  const body = (await res.json()) as ImportResult | { error: string };
+  if (!res.ok || "error" in body) {
+    throw new Error("error" in body ? body.error : `import responded ${res.status}`);
+  }
+  return body;
+}

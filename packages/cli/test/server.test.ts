@@ -4,11 +4,20 @@
  * image layer) and a fresh app; routes are exercised via fastify inject.
  */
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ArrowLayer, ImageLayer, LayerBox, Scene, ShapeLayer } from "@gimpish/core";
 import type { FastifyInstance } from "fastify";
+import { unzipSync, zipSync } from "fflate";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/server/app.ts";
@@ -290,6 +299,275 @@ describe("POST /api/layer/:id/transform", () => {
     });
     expect(res.statusCode).toBe(404);
     expect((res.json() as { error: string }).error).toContain("nope");
+  });
+});
+
+describe("POST /api/layer/:id/order", () => {
+  it("moves a layer to an absolute paint index and persists", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/layer/photo/order",
+      payload: { index: 0 },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, index: 0 });
+    expect(readSceneFromDisk().layers.map((l) => l.id)).toEqual([
+      "photo",
+      "panel",
+      "glow",
+      "wash",
+      "title",
+      "point",
+    ]);
+  });
+
+  it("clamps out-of-range indices to the top", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/layer/panel/order",
+      payload: { index: 99 },
+    });
+    expect(res.json()).toEqual({ ok: true, index: 5 });
+    expect(readSceneFromDisk().layers.at(-1)?.id).toBe("panel");
+  });
+
+  it("400s without a numeric index and 404s for unknown layers", async () => {
+    const bad = await app.inject({ method: "POST", url: "/api/layer/panel/order", payload: {} });
+    expect(bad.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/layer/nope/order",
+      payload: { index: 1 },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+});
+
+describe("DELETE /api/layer/:id", () => {
+  it("removes the layer and persists", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/api/layer/photo" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(readSceneFromDisk().layers.map((l) => l.id)).not.toContain("photo");
+    expect(readSceneFromDisk().layers).toHaveLength(5);
+  });
+
+  it("404s for an unknown layer id", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/api/layer/nope" });
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: string }).error).toContain("nope");
+  });
+});
+
+describe("GET /api/export", () => {
+  it("returns a full-resolution PNG attachment by default", async () => {
+    const res = await app.inject({ url: "/api/export" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/png");
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="scene.png"');
+    expectPng(res.rawPayload);
+    expect(pngSize(res.rawPayload)).toEqual({ width: 200, height: 120 }); // full res, not preview-capped
+  });
+
+  it("encodes jpg and webp", async () => {
+    const jpg = await app.inject({ url: "/api/export?format=jpg" });
+    expect(jpg.statusCode).toBe(200);
+    expect(jpg.headers["content-type"]).toBe("image/jpeg");
+    expect([...jpg.rawPayload.subarray(0, 2)]).toEqual([0xff, 0xd8]);
+
+    const webp = await app.inject({ url: "/api/export?format=webp" });
+    expect(webp.statusCode).toBe(200);
+    expect(webp.headers["content-type"]).toBe("image/webp");
+    expect(webp.rawPayload.subarray(0, 4).toString("ascii")).toBe("RIFF");
+  });
+
+  it("400s on an unknown format", async () => {
+    const res = await app.inject({ url: "/api/export?format=gif" });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toContain("gif");
+  });
+});
+
+describe("GET /api/bundle", () => {
+  it("zips scene.json plus referenced assets, flattened into assets/", async () => {
+    const res = await app.inject({ url: "/api/bundle" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("application/zip");
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="scene.gimpish"');
+
+    const entries = unzipSync(res.rawPayload);
+    expect(Object.keys(entries).sort()).toEqual(["assets/tiny.png", "scene.json"]);
+    const scene = JSON.parse(new TextDecoder().decode(entries["scene.json"])) as Scene;
+    const photo = scene.layers.find((l) => l.id === "photo") as ImageLayer;
+    expect(photo.source).toBe("assets/tiny.png");
+  });
+
+  it("never encodes source directory layout — nested and absolute paths flatten alike", async () => {
+    const nested = path.join(tmp, "downloads/deep");
+    mkdirSync(nested, { recursive: true });
+    copyFileSync(path.join(tmp, "tiny.png"), path.join(nested, "My Pic.png"));
+
+    const scene = readSceneFromDisk();
+    const photo = scene.layers.find((l) => l.id === "photo") as ImageLayer;
+    photo.source = "downloads/deep/My Pic.png"; // in-root but nested
+    scene.layers.push({
+      ...photo,
+      id: "photo2",
+      source: path.join(tmp, "tiny.png"), // absolute
+    });
+    writeFileSync(scenePath, JSON.stringify(scene));
+
+    const res = await app.inject({ url: "/api/bundle" });
+    const entries = unzipSync(res.rawPayload);
+    expect(Object.keys(entries).sort()).toEqual([
+      "assets/my-pic.png",
+      "assets/tiny.png",
+      "scene.json",
+    ]);
+    const bundled = JSON.parse(new TextDecoder().decode(entries["scene.json"])) as Scene;
+    const sources = bundled.layers.filter((l) => l.type === "image").map((l) => l.source);
+    expect(sources).toEqual(["assets/my-pic.png", "assets/tiny.png"]);
+  });
+
+  it("keeps cutout caches under .scene_cache/ by basename", async () => {
+    const cacheSrc = path.join(tmp, "elsewhere");
+    mkdirSync(cacheSrc, { recursive: true });
+    copyFileSync(path.join(tmp, "tiny.png"), path.join(cacheSrc, "photo_cutout.png"));
+
+    const scene = readSceneFromDisk();
+    const photo = scene.layers.find((l) => l.id === "photo") as ImageLayer;
+    photo.mask = {
+      kind: "cutout",
+      cache: "elsewhere/photo_cutout.png",
+      feather: 0,
+      invert: false,
+    };
+    writeFileSync(scenePath, JSON.stringify(scene));
+
+    const res = await app.inject({ url: "/api/bundle" });
+    const entries = unzipSync(res.rawPayload);
+    expect(Object.keys(entries).sort()).toEqual([
+      ".scene_cache/photo_cutout.png",
+      "assets/tiny.png",
+      "scene.json",
+    ]);
+    const bundled = JSON.parse(new TextDecoder().decode(entries["scene.json"])) as Scene;
+    const bundledPhoto = bundled.layers.find((l) => l.id === "photo") as ImageLayer;
+    expect(bundledPhoto.mask?.cache).toBe(".scene_cache/photo_cutout.png");
+  });
+
+  it("500s with the missing path when a referenced asset does not exist", async () => {
+    const scene = readSceneFromDisk();
+    const photo = scene.layers.find((l) => l.id === "photo") as ImageLayer;
+    photo.source = "gone.png";
+    writeFileSync(scenePath, JSON.stringify(scene));
+
+    const res = await app.inject({ url: "/api/bundle" });
+    expect(res.statusCode).toBe(500);
+    expect((res.json() as { error: string }).error).toContain("gone.png");
+  });
+});
+
+describe("POST /api/import", () => {
+  async function makeUpload(w: number, h: number): Promise<Buffer> {
+    return sharp({
+      create: { width: w, height: h, channels: 4, background: { r: 20, g: 200, b: 90, alpha: 1 } },
+    })
+      .png()
+      .toBuffer();
+  }
+
+  function post(name: string, body: Buffer) {
+    return app.inject({
+      method: "POST",
+      url: `/api/import?name=${encodeURIComponent(name)}`,
+      headers: { "content-type": "application/octet-stream" },
+      body,
+    });
+  }
+
+  it("saves the image under assets/ and adds a fitted, centered top layer", async () => {
+    const res = await post("My Photo.PNG", await makeUpload(400, 120));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true,
+      kind: "image",
+      id: "my-photo",
+      source: "assets/my-photo.png",
+      width: 400,
+      height: 120,
+    });
+    expect(existsSync(path.join(tmp, "assets/my-photo.png"))).toBe(true);
+
+    const layers = readSceneFromDisk().layers;
+    const added = layers[layers.length - 1] as ImageLayer;
+    expect(added.id).toBe("my-photo");
+    // 400x120 into 200x120: scale 0.5, centered → x=0, y=30.
+    expect(added.transform.scale).toBeCloseTo(0.5);
+    expect(added.transform.x).toBe(0);
+    expect(added.transform.y).toBe(30);
+  });
+
+  it("reuses identical asset bytes but still creates a distinct layer id", async () => {
+    const bytes = await makeUpload(40, 40);
+    await post("dup.png", bytes);
+    const res = await post("dup.png", bytes);
+    expect(res.json()).toMatchObject({ id: "dup2", source: "assets/dup.png" });
+    expect(existsSync(path.join(tmp, "assets/dup-2.png"))).toBe(false);
+  });
+
+  it("suffixes the asset file when the same name arrives with different content", async () => {
+    await post("clash.png", await makeUpload(30, 30));
+    const res = await post("clash.png", await makeUpload(31, 31));
+    expect(res.json()).toMatchObject({ id: "clash2", source: "assets/clash-2.png" });
+  });
+
+  it("400s on non-image bytes and on a missing name", async () => {
+    const bad = await post("notes.txt", Buffer.from("hello"));
+    expect(bad.statusCode).toBe(400);
+
+    const unnamed = await app.inject({
+      method: "POST",
+      url: "/api/import",
+      headers: { "content-type": "application/octet-stream" },
+      body: await makeUpload(10, 10),
+    });
+    expect(unnamed.statusCode).toBe(400);
+  });
+
+  it("round-trips a .gimpish bundle, replacing the scene and backing up the old one", async () => {
+    const bundle = await app.inject({ url: "/api/bundle" });
+
+    // Wipe the scene, then restore it from the bundle.
+    writeFileSync(
+      scenePath,
+      JSON.stringify({ version: 1, canvas: { width: 10, height: 10 }, layers: [] }),
+    );
+    const res = await post("scene.gimpish", bundle.rawPayload);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, kind: "bundle", layers: 6 });
+
+    const restored = readSceneFromDisk();
+    expect(restored.canvas).toMatchObject({ width: 200, height: 120 });
+    expect(restored.layers).toHaveLength(6);
+    expect(existsSync(`${scenePath}.bak`)).toBe(true);
+
+    const render = await app.inject({ url: "/api/preview.png" });
+    expect(render.statusCode).toBe(200); // assets extracted where the scene expects them
+  });
+
+  it("rejects bundles with path-escaping entries", async () => {
+    const evil = zipSync({
+      "scene.json": new TextEncoder().encode(
+        JSON.stringify({ version: 1, canvas: { width: 10, height: 10 }, layers: [] }),
+      ),
+      "../evil.txt": new TextEncoder().encode("nope"),
+    });
+    const res = await post("evil.gimpish", Buffer.from(evil));
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as { error: string }).error).toContain("unsafe path");
+    expect(existsSync(path.join(tmp, "..", "evil.txt"))).toBe(false);
   });
 });
 

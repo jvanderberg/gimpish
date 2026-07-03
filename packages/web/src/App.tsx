@@ -1,11 +1,25 @@
+import type { DragEvent as ReactDragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { postTransform, previewUrl, spriteUrl, type TransformDelta } from "./api";
+import {
+  deleteLayer,
+  importFile,
+  postTransform,
+  previewUrl,
+  reorderLayer,
+  spriteUrl,
+  type TransformDelta,
+} from "./api";
 import { LayerPanel } from "./components/LayerPanel";
-import { Stage } from "./components/Stage";
+import { Stage, type Toast } from "./components/Stage";
 import { useDrag } from "./hooks/useDrag";
 import { useElementSize } from "./hooks/useElementSize";
 import { useLiveScene } from "./hooks/useLiveScene";
 import { applyDragToBox, containBox, ghostStyleFor } from "./lib/geometry";
+
+/** True when the drag payload contains OS files (vs an in-page drag). */
+function hasFiles(e: ReactDragEvent): boolean {
+  return (e.dataTransfer?.types ?? []).includes("Files");
+}
 
 const ARROW_DELTAS: Record<string, [number, number]> = {
   ArrowLeft: [-1, 0],
@@ -72,11 +86,118 @@ export function App() {
   const ghostSrc = sel ? spriteUrl(sel, ts) : null;
   const ghostStyle = ghostStyleFor(drag, selBox !== null, k);
 
+  // ---- file import (drag-drop + upload button) --------------------------------
+
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dropActive, setDropActive] = useState(false);
+  const dragDepth = useRef(0);
+  const toastSeq = useRef(0);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  const pushToast = useCallback((text: string, kind: Toast["kind"]) => {
+    toastSeq.current += 1;
+    const id = toastSeq.current;
+    setToasts((list) => [...list.slice(-3), { id, text, kind }]);
+    setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), 8000);
+  }, []);
+
+  const importFiles = useCallback(
+    async (files: Iterable<File>) => {
+      for (const file of files) {
+        try {
+          const result = await importFile(file);
+          if (result.kind === "image") {
+            // Surface the exact handle an agent session sees in scene.json.
+            pushToast(`added layer '${result.id}' — ${result.source}`, "ok");
+            setSel(result.id);
+          } else {
+            pushToast(`opened ${file.name} (${result.layers} layers)`, "ok");
+            setSel(null);
+          }
+        } catch (e) {
+          pushToast(`${file.name}: ${e instanceof Error ? e.message : String(e)}`, "err");
+        }
+      }
+    },
+    [pushToast],
+  );
+
+  const onDelete = useCallback(
+    (id: string) => {
+      deleteLayer(id)
+        .then(() => {
+          pushToast(`deleted layer '${id}'`, "ok");
+          setSel((s) => (s === id ? null : s));
+        })
+        .catch((e: unknown) => {
+          pushToast(`delete '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+        });
+    },
+    [pushToast],
+  );
+
+  const onReorder = useCallback(
+    (id: string, index: number) => {
+      reorderLayer(id, index).catch((e: unknown) => {
+        pushToast(`reorder '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+      });
+    },
+    [pushToast],
+  );
+
+  // Delete/Backspace removes the selected layer (when not mid-drag).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (!sel || drag) return;
+      e.preventDefault();
+      onDelete(sel);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel, drag, onDelete]);
+
+  const onDragEnter = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDropActive(true);
+  }, []);
+  const onDragOver = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
+    if (hasFiles(e)) e.preventDefault();
+  }, []);
+  const onDragLeave = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasFiles(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDropActive(false);
+  }, []);
+  const onDrop = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDropActive(false);
+      void importFiles(Array.from(e.dataTransfer.files));
+    },
+    [importFiles],
+  );
+
   const layers = scene ? [...scene.layers].reverse() : [];
   const selLayer = scene?.layers.find((l) => l.id === sel) ?? null;
 
   return (
     <div className="app">
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*,.gimpish"
+        multiple
+        hidden
+        onChange={(e) => {
+          void importFiles(Array.from(e.target.files ?? []));
+          e.target.value = ""; // allow re-picking the same file
+        }}
+      />
       <Stage
         canvas={canvas}
         frame={frame}
@@ -88,7 +209,14 @@ export function App() {
         selBox={selBox}
         k={k}
         live={live}
+        dropActive={dropActive}
+        toasts={toasts}
         onRefresh={() => void refresh()}
+        onImportClick={() => fileInput.current?.click()}
+        onDragEnter={onDragEnter}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -98,6 +226,8 @@ export function App() {
         layers={layers}
         sel={sel}
         onSelect={setSel}
+        onDelete={onDelete}
+        onReorder={onReorder}
         err={err}
         selLayer={selLayer}
       />
