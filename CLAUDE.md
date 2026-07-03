@@ -22,7 +22,7 @@ model to `~/.u2net/` on first use.
 ## Generating a scene
 
 ```bash
-npx gimpish init --width 1600 --height 900 --bg "#101418ff"
+npx gimpish init -w 1600 -h 900 --bg "#101418ff"   # init <dir> scaffolds a new document directory
 npx gimpish add photo.jpg --name subject          # import an image layer
 npx gimpish layer remove-bg subject               # U²-Net cutout mask
 npx gimpish layer fit subject --mode fit --percent 70 --anchor right
@@ -33,7 +33,10 @@ npx gimpish preview --out preview.png             # downscaled; view this to ver
 npx gimpish export --out final.png                # full res, end of session only
 ```
 
-Every command auto-saves. `npx gimpish layers` prints the stack. Full verb
+Every command auto-saves and echoes the scene it touched (`… → scene.json`).
+Bare `npx gimpish` prints the current scene's status (or a quickstart if none).
+The cwd is the document; work on another one with `-C <dir>` (before the verb)
+or `--scene <dir-or-file>`. `npx gimpish layers` prints the stack. Full verb
 surface: `npx gimpish --help`, plus `layer --help` / `draw --help`; option
 details and conventions (coordinates, colors, anchors, blends) are in README.md.
 

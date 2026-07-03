@@ -7,13 +7,12 @@ import {
   layerIndex,
   parseColor,
   parseStops,
-  saveScene,
   type TextSpec,
   uniqueId,
   withAlpha,
 } from "@gimpish/core";
 import type { Command } from "commander";
-import { CliError, loadOrFail, parseNum, requireAnchor, sceneOption } from "../shared.ts";
+import { CliError, loadOrFail, parseNum, requireAnchor, saved, sceneOption } from "../shared.ts";
 
 /** Insert above `over` when given, otherwise append on top. */
 function insertLayer(doc: SceneDoc, layer: Layer, over?: string): void {
@@ -55,8 +54,7 @@ function addShape(shape: "rect" | "ellipse", opts: ShapeOpts): string {
     stroke_width: opts.strokeWidth,
   };
   doc.scene.layers.push(layer);
-  saveScene(doc);
-  return `added ${shape} layer '${layer.id}'`;
+  return saved(doc, `added ${shape} layer '${layer.id}'`);
 }
 
 export function rectAction(opts: ShapeOpts): string {
@@ -107,8 +105,7 @@ export function arrowAction(opts: {
     },
   };
   insertLayer(doc, layer, opts.over);
-  saveScene(doc);
-  return `added arrow layer '${layer.id}'`;
+  return saved(doc, `added arrow layer '${layer.id}'`);
 }
 
 export function textAction(
@@ -203,8 +200,7 @@ export function textAction(
     text,
   };
   insertLayer(doc, layer, opts.over);
-  saveScene(doc);
-  return `added text layer '${layer.id}'`;
+  return saved(doc, `added text layer '${layer.id}'`);
 }
 
 function addGradient(opts: {
@@ -238,8 +234,7 @@ function addGradient(opts: {
     gradient,
   };
   insertLayer(doc, layer, opts.over);
-  saveScene(doc);
-  return `added gradient layer '${layer.id}'`;
+  return saved(doc, `added gradient layer '${layer.id}'`);
 }
 
 export function gradientAction(opts: {

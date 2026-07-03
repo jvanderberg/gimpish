@@ -672,3 +672,34 @@ describe("websocket /ws", () => {
     }
   }, 15_000);
 });
+
+describe("serve advertisement (.scene_cache/serve.json)", () => {
+  it("reports a live server and ignores stale or malformed entries", async () => {
+    const { readLiveServer, serveInfoPath } = await import("../src/server/run.ts");
+    const dir = mkdtempSync(path.join(tmpdir(), "gimpish-serveinfo-"));
+    const scene = path.join(dir, "scene.json");
+    try {
+      expect(readLiveServer(scene)).toBeNull(); // no advertisement
+
+      const file = serveInfoPath(scene);
+      mkdirSync(path.dirname(file), { recursive: true });
+      const info = {
+        pid: process.pid, // this test process: definitely alive
+        port: 1234,
+        url: "http://127.0.0.1:1234",
+        scene,
+        startedAt: "2026-01-01T00:00:00.000Z",
+      };
+      writeFileSync(file, JSON.stringify(info));
+      expect(readLiveServer(scene)?.port).toBe(1234);
+
+      writeFileSync(file, JSON.stringify({ ...info, pid: 2 ** 30 })); // dead pid
+      expect(readLiveServer(scene)).toBeNull();
+
+      writeFileSync(file, "not json");
+      expect(readLiveServer(scene)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -3,7 +3,7 @@
 import { writeFileSync } from "node:fs";
 import { rasterToPng, renderPreview, renderToFile } from "@gimpish/core";
 import type { Command } from "commander";
-import { loadOrFail, parseIntStrict, sceneOption } from "../shared.ts";
+import { displayScene, loadOrFail, parseIntStrict, sceneOption } from "../shared.ts";
 
 export async function previewAction(opts: {
   out: string;
@@ -13,7 +13,7 @@ export async function previewAction(opts: {
   const doc = loadOrFail(opts.scene);
   const img = await renderPreview(doc, opts.max);
   writeFileSync(opts.out, await rasterToPng(img));
-  return `preview -> ${opts.out} (${img.width}x${img.height})`;
+  return `preview -> ${opts.out} (${img.width}x${img.height}) [scene: ${displayScene(doc.path)}]`;
 }
 
 export async function renderAction(opts: {
@@ -24,7 +24,7 @@ export async function renderAction(opts: {
 }): Promise<string> {
   const doc = loadOrFail(opts.scene);
   await renderToFile(doc, opts.out, { width: opts.width, height: opts.height });
-  return `rendered -> ${opts.out}`;
+  return `rendered -> ${opts.out} [scene: ${displayScene(doc.path)}]`;
 }
 
 export async function exportAction(opts: {
@@ -40,7 +40,7 @@ export async function exportAction(opts: {
     height: opts.height,
     quality: opts.quality,
   });
-  return `exported -> ${opts.out}`;
+  return `exported -> ${opts.out} [scene: ${displayScene(doc.path)}]`;
 }
 
 export function registerOutputCommands(program: Command): void {

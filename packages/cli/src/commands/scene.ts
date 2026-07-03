@@ -1,20 +1,49 @@
 /** Scene lifecycle verbs: init, add, layers, save. */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { type Layer, parseColor, parseScene, saveScene, uniqueId } from "@gimpish/core";
 import type { Command } from "commander";
-import { CliError, loadOrFail, parseIntStrict, relToScene, sceneOption } from "../shared.ts";
+import {
+  CliError,
+  DEFAULT_SCENE,
+  displayScene,
+  loadOrFail,
+  parseIntStrict,
+  relToScene,
+  resolveScenePath,
+  saved,
+  sceneOption,
+} from "../shared.ts";
 
-export function initAction(opts: {
-  width: number;
-  height: number;
-  bg: string;
-  scene: string;
-  force?: boolean;
-}): string {
-  if (existsSync(opts.scene) && !opts.force) {
-    throw new CliError(`${opts.scene} already exists (use --force to overwrite).`);
+export function initAction(
+  dir: string | undefined,
+  opts: { width?: number; height?: number; bg: string; scene: string; force?: boolean },
+): string {
+  if (opts.width === undefined || opts.height === undefined) {
+    throw new CliError(
+      "canvas size is required — e.g. `gimpish init -w 1600 -h 900` (16:9), " +
+        "or `gimpish init poster/ -w 1080 -h 1350` to scaffold a new document directory.",
+    );
+  }
+  if (dir && opts.scene !== DEFAULT_SCENE) {
+    throw new CliError("give either a directory to scaffold or --scene, not both.");
+  }
+  const target = dir ? path.join(path.resolve(dir), DEFAULT_SCENE) : resolveScenePath(opts.scene);
+  if (existsSync(target) && !opts.force) {
+    throw new CliError(`${displayScene(target)} already exists (use --force to overwrite).`);
+  }
+  if (dir) {
+    mkdirSync(path.dirname(target), { recursive: true });
+  } else if (opts.scene === DEFAULT_SCENE) {
+    // Bare `init` in a directory that already has stuff in it is usually fine
+    // (a repo root), but occasionally an accident (~). Note it, don't block.
+    const visible = readdirSync(path.dirname(target)).filter((e) => !e.startsWith("."));
+    if (visible.length > 0) {
+      process.stderr.write(
+        "note: creating scene.json in a non-empty directory — `gimpish init <dir>` scaffolds a fresh document directory.\n",
+      );
+    }
   }
   if (opts.bg !== "transparent") parseColor(opts.bg); // validate
   const doc = {
@@ -22,10 +51,10 @@ export function initAction(opts: {
       canvas: { width: opts.width, height: opts.height, background: opts.bg },
       layers: [],
     }),
-    path: path.resolve(opts.scene),
+    path: target,
   };
   saveScene(doc);
-  return `created ${opts.scene} (${opts.width}x${opts.height}, bg=${opts.bg})`;
+  return `created ${displayScene(target)} (${opts.width}x${opts.height}, bg=${opts.bg})`;
 }
 
 export function addAction(file: string, opts: { name?: string; scene: string }): string {
@@ -44,8 +73,7 @@ export function addAction(file: string, opts: { name?: string; scene: string }):
     mask: null,
   };
   doc.scene.layers.push(layer);
-  saveScene(doc);
-  return `added image layer '${layer.id}' (${file})`;
+  return saved(doc, `added image layer '${layer.id}' (${file})`);
 }
 
 function layerSummary(l: Layer): string {
@@ -72,8 +100,13 @@ function layerSummary(l: Layer): string {
 export function layersAction(opts: { scene: string }): string {
   const doc = loadOrFail(opts.scene);
   const { canvas, layers } = doc.scene;
-  if (layers.length === 0) return "(no layers)";
-  const lines = [`canvas ${canvas.width}x${canvas.height}  bg=${canvas.background}`];
+  const lines = [
+    `scene ${displayScene(doc.path)} — canvas ${canvas.width}x${canvas.height}  bg=${canvas.background}`,
+  ];
+  if (layers.length === 0) {
+    lines.push("(no layers)");
+    return lines.join("\n");
+  }
   const idWidth = Math.max(...layers.map((l) => l.id.length), 2);
   for (let i = layers.length - 1; i >= 0; i -= 1) {
     const l = layers[i] as Layer;
@@ -89,19 +122,20 @@ export function layersAction(opts: { scene: string }): string {
 export function saveAction(out: string | undefined, opts: { scene: string }): string {
   const doc = loadOrFail(opts.scene);
   const target = saveScene(doc, out);
-  return `saved ${target}`;
+  return `saved ${displayScene(target)}`;
 }
 
 export function registerSceneCommands(program: Command): void {
   sceneOption(
     program
       .command("init")
-      .description("Create a new empty scene.")
-      .requiredOption("-w, --width <px>", "Canvas width in pixels.", parseIntStrict)
-      .requiredOption("-h, --height <px>", "Canvas height in pixels.", parseIntStrict)
+      .description("Create a new empty scene (in <dir> if given, else here).")
+      .argument("[dir]", "Scaffold a new document directory and put scene.json inside it.")
+      .option("-w, --width <px>", "Canvas width in pixels.", parseIntStrict)
+      .option("-h, --height <px>", "Canvas height in pixels.", parseIntStrict)
       .option("--bg <color>", "'transparent' or '#rrggbbaa'.", "transparent")
       .option("--force", "Overwrite an existing scene."),
-  ).action((opts) => console.log(initAction(opts)));
+  ).action((dir, opts) => console.log(initAction(dir, opts)));
 
   sceneOption(
     program

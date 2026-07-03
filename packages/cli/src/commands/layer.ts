@@ -11,7 +11,6 @@ import {
   removeBackground,
   resolveFit,
   rotatePoint,
-  saveScene,
   sceneRoot,
 } from "@gimpish/core";
 import type { Command } from "commander";
@@ -22,6 +21,7 @@ import {
   parseNum,
   relToScene,
   requireAnchor,
+  saved,
   sceneOption,
 } from "../shared.ts";
 
@@ -42,8 +42,7 @@ export function transformAction(
   if (opts.y !== undefined) t.y = opts.y;
   if (opts.scale !== undefined) t.scale = opts.scale;
   if (opts.rotation !== undefined) t.rotation = opts.rotation;
-  saveScene(doc);
-  return `${layerId}: x=${t.x} y=${t.y} scale=${t.scale} rotation=${t.rotation}`;
+  return saved(doc, `${layerId}: x=${t.x} y=${t.y} scale=${t.scale} rotation=${t.rotation}`);
 }
 
 export function rotateAction(
@@ -60,14 +59,12 @@ export function rotateAction(
   if (layer.type === "image") {
     // Image transforms store clockwise-positive rotation.
     layer.transform.rotation -= degreesCcw;
-    saveScene(doc);
-    return `${layerId}: rotation=${g(layer.transform.rotation)}`;
+    return saved(doc, `${layerId}: rotation=${g(layer.transform.rotation)}`);
   }
 
   if (layer.type === "text") {
     layer.text.rotation -= degreesCcw;
-    saveScene(doc);
-    return `${layerId}: rotation=${g(layer.text.rotation)}`;
+    return saved(doc, `${layerId}: rotation=${g(layer.text.rotation)}`);
   }
 
   if (layer.type !== "arrow") {
@@ -98,10 +95,10 @@ export function rotateAction(
   a.from_y = from.y;
   a.to_x = to.x;
   a.to_y = to.y;
-  saveScene(doc);
-  return (
+  return saved(
+    doc,
     `${layerId}: rotated ${g(Math.abs(degreesCcw))} deg ` +
-    `${degreesCcw >= 0 ? "ccw" : "cw"} around ${opts.pivot}`
+      `${degreesCcw >= 0 ? "ccw" : "cw"} around ${opts.pivot}`,
   );
 }
 
@@ -131,10 +128,10 @@ export async function fitAction(
   layer.transform.scale = scale;
   layer.transform.x = x;
   layer.transform.y = y;
-  saveScene(doc);
-  return (
+  return saved(
+    doc,
     `${layerId}: ${opts.mode} ${g(opts.percent)}% -> ` +
-    `scale=${Number(scale.toPrecision(4))} x=${x.toFixed(0)} y=${y.toFixed(0)}`
+      `scale=${Number(scale.toPrecision(4))} x=${x.toFixed(0)} y=${y.toFixed(0)}`,
   );
 }
 
@@ -171,16 +168,14 @@ export function moveAction(
     throw new CliError("specify --up/--down/--top/--bottom/--to");
   }
   layers.splice(j, 0, layer);
-  saveScene(doc);
-  return `${layerId}: moved to index ${j}`;
+  return saved(doc, `${layerId}: moved to index ${j}`);
 }
 
 export function opacityAction(layerId: string, value: number, opts: { scene: string }): string {
   const doc = loadOrFail(opts.scene);
   const clamped = Math.max(0, Math.min(1, value));
   findLayer(doc.scene, layerId).opacity = clamped;
-  saveScene(doc);
-  return `${layerId}: opacity=${clamped}`;
+  return saved(doc, `${layerId}: opacity=${clamped}`);
 }
 
 export function blurAction(layerId: string, sigma: number, opts: { scene: string }): string {
@@ -192,8 +187,7 @@ export function blurAction(layerId: string, sigma: number, opts: { scene: string
   } else {
     layer.blur = sigma;
   }
-  saveScene(doc);
-  return `${layerId}: blur=${sigma === 0 ? "off" : g(sigma)}`;
+  return saved(doc, `${layerId}: blur=${sigma === 0 ? "off" : g(sigma)}`);
 }
 
 export function blendAction(layerId: string, mode: string, opts: { scene: string }): string {
@@ -204,8 +198,7 @@ export function blendAction(layerId: string, mode: string, opts: { scene: string
   }
   const doc = loadOrFail(opts.scene);
   findLayer(doc.scene, layerId).blend = mode;
-  saveScene(doc);
-  return `${layerId}: blend=${mode}`;
+  return saved(doc, `${layerId}: blend=${mode}`);
 }
 
 export function visibleAction(layerId: string, value: string, opts: { scene: string }): string {
@@ -216,15 +209,13 @@ export function visibleAction(layerId: string, value: string, opts: { scene: str
   const visible = lowered === "true";
   const doc = loadOrFail(opts.scene);
   findLayer(doc.scene, layerId).visible = visible;
-  saveScene(doc);
-  return `${layerId}: visible=${visible}`;
+  return saved(doc, `${layerId}: visible=${visible}`);
 }
 
 export function deleteAction(layerId: string, opts: { scene: string }): string {
   const doc = loadOrFail(opts.scene);
   doc.scene.layers.splice(layerIndex(doc.scene, layerId), 1);
-  saveScene(doc);
-  return `deleted ${layerId}`;
+  return saved(doc, `deleted ${layerId}`);
 }
 
 export async function removeBgAction(layerId: string, opts: { scene: string }): Promise<string> {
@@ -236,8 +227,7 @@ export async function removeBgAction(layerId: string, opts: { scene: string }): 
   console.log("running background removal (first run loads the model)…");
   await removeBackground(src, out);
   layer.mask = { kind: "cutout", cache: relToScene(doc, out), feather: 0, invert: false };
-  saveScene(doc);
-  return `${layerId}: background removed -> ${layer.mask.cache}`;
+  return saved(doc, `${layerId}: background removed -> ${layer.mask.cache}`);
 }
 
 export function maskAction(
@@ -280,8 +270,7 @@ export function maskAction(
   } else {
     throw new CliError("provide --from or --shape");
   }
-  saveScene(doc);
-  return `${layerId}: mask=${layer.mask.kind}`;
+  return saved(doc, `${layerId}: mask=${layer.mask.kind}`);
 }
 
 export function registerLayerCommands(program: Command): void {

@@ -48,7 +48,7 @@ Create a scene, add a background, add a foreground subject, remove the subject
 background, and export the result:
 
 ```bash
-gimpish init --width 1920 --height 1080
+gimpish init -w 1920 -h 1080          # or: gimpish init poster/ -w 1920 -h 1080
 
 gimpish add downloads/background.jpg --name bg
 gimpish layer fit bg --mode fill
@@ -65,6 +65,10 @@ gimpish preview --out preview.png
 gimpish export --out final.png
 ```
 
+Every command echoes the scene it touched (`added image layer 'bg' → scene.json`),
+and bare `gimpish` prints the current scene's status — or a quickstart if there is
+no scene here yet.
+
 ## Live editor
 
 Run the editor server beside the scene:
@@ -74,6 +78,11 @@ gimpish serve
 ```
 
 Then open `http://127.0.0.1:8765`.
+
+While running, the server advertises itself in `.scene_cache/serve.json`
+(`{pid, port, url, …}`); a second `gimpish serve` on the same scene reports the
+running server instead of failing with a port conflict. The file is removed on
+shutdown, and a stale one (dead pid) is ignored.
 
 The browser renders through the same pipeline as `preview`/`render`/`export`.
 When `scene.json` or `.scene_cache/` changes, the server pushes a reload over
@@ -136,7 +145,8 @@ gimpish serve --scene examples/radial-badge.scene.json --port 8766
 Scene lifecycle:
 
 ```bash
-gimpish init --width 1920 --height 1080 [--bg transparent|#rrggbbaa]
+gimpish init -w 1920 -h 1080 [--bg transparent|#rrggbbaa]
+gimpish init poster/ -w 1080 -h 1350   # scaffold a new document directory
 gimpish add path/to/image.jpg --name layer-name
 gimpish layers
 gimpish save [copy.json]
@@ -194,8 +204,14 @@ gimpish draw alpha-gradient --color "#000000" --from 0.75 --to 0 \
   --kind radial --anchor bottom-right
 ```
 
-All commands operate on `./scene.json` by default. Pass `--scene path/to/scene.json`
-to use a different file.
+The current directory is the document: all commands operate on `./scene.json`
+(with `assets/` and `.scene_cache/` beside it). To work on another document, pass
+its directory — `gimpish -C ../banner add logo.png` (git-style, before the verb)
+or `--scene <dir-or-file>` (a directory resolves to the `scene.json` inside it).
+There is deliberately no sticky "current scene" state; every command echoes the
+scene it resolved (`… → ../banner/scene.json`) so a wrong-scene mistake surfaces
+immediately. Nothing auto-creates a scene: every verb except `init` errors if
+none exists, and scene writes are atomic (write-temp-then-rename).
 
 ## Scene model
 

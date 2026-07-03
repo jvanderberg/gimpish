@@ -47,7 +47,7 @@ function readScene(scenePath: string): Scene {
 /** New 80x60 scene in a fresh temp dir; returns the scene path. */
 function newScene(width = 80, height = 60, bg = "transparent"): string {
   const scene = path.join(tempDir(), "scene.json");
-  initAction({ width, height, bg, scene });
+  initAction(undefined, { width, height, bg, scene });
   return scene;
 }
 
@@ -62,7 +62,7 @@ async function writePng(file: string, width: number, height: number): Promise<vo
 describe("init", () => {
   it("creates a valid scene", () => {
     const scene = path.join(tempDir(), "scene.json");
-    const msg = initAction({ width: 80, height: 60, bg: "transparent", scene });
+    const msg = initAction(undefined, { width: 80, height: 60, bg: "transparent", scene });
     expect(msg).toBe(`created ${scene} (80x60, bg=transparent)`);
     const s = readScene(scene);
     expect(s.canvas).toMatchObject({ width: 80, height: 60, background: "transparent" });
@@ -71,16 +71,43 @@ describe("init", () => {
 
   it("refuses to overwrite without --force", () => {
     const scene = newScene();
-    expect(() => initAction({ width: 10, height: 10, bg: "transparent", scene })).toThrow(
-      /already exists/,
-    );
-    initAction({ width: 10, height: 10, bg: "transparent", scene, force: true });
+    expect(() =>
+      initAction(undefined, { width: 10, height: 10, bg: "transparent", scene }),
+    ).toThrow(/already exists/);
+    initAction(undefined, { width: 10, height: 10, bg: "transparent", scene, force: true });
     expect(readScene(scene).canvas.width).toBe(10);
   });
 
   it("rejects a bad background color", () => {
     const scene = path.join(tempDir(), "scene.json");
-    expect(() => initAction({ width: 10, height: 10, bg: "nope", scene })).toThrow(/bad color/);
+    expect(() => initAction(undefined, { width: 10, height: 10, bg: "nope", scene })).toThrow(
+      /bad color/,
+    );
+  });
+
+  it("requires an explicit canvas size", () => {
+    const scene = path.join(tempDir(), "scene.json");
+    expect(() => initAction(undefined, { bg: "transparent", scene })).toThrow(
+      /canvas size is required/,
+    );
+    expect(() => initAction(undefined, { width: 80, bg: "transparent", scene })).toThrow(
+      /canvas size is required/,
+    );
+  });
+
+  it("scaffolds a document directory when given one", () => {
+    const dir = path.join(tempDir(), "card");
+    const msg = initAction(dir, { width: 80, height: 60, bg: "transparent", scene: "scene.json" });
+    const scene = path.join(dir, "scene.json");
+    expect(msg).toBe(`created ${scene} (80x60, bg=transparent)`);
+    expect(readScene(scene).canvas.width).toBe(80);
+  });
+
+  it("rejects a directory combined with --scene", () => {
+    const dir = path.join(tempDir(), "card");
+    expect(() =>
+      initAction(dir, { width: 80, height: 60, bg: "transparent", scene: "other.json" }),
+    ).toThrow(/not both/);
   });
 });
 
@@ -90,7 +117,7 @@ describe("add", () => {
     const img = path.join(path.dirname(scene), "sprite.png");
     await writePng(img, 8, 8);
     const msg = addAction(img, { scene });
-    expect(msg).toBe(`added image layer 'sprite' (${img})`);
+    expect(msg).toBe(`added image layer 'sprite' (${img}) → ${scene}`);
     const s = readScene(scene);
     expect(s.layers).toHaveLength(1);
     const layer = s.layers[0];
@@ -114,13 +141,22 @@ describe("layers", () => {
     ellipseAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "blob" });
     const out = layersAction({ scene });
     const lines = out.split("\n");
+    expect(lines[0]).toContain(`scene ${scene}`);
     expect(lines[0]).toContain("canvas 80x60");
     expect(lines[1]).toContain("blob");
     expect(lines[2]).toContain("backdrop");
   });
 
   it("prints (no layers) for an empty scene", () => {
-    expect(layersAction({ scene: newScene() })).toBe("(no layers)");
+    const out = layersAction({ scene: newScene() });
+    expect(out).toContain("canvas 80x60");
+    expect(out).toContain("(no layers)");
+  });
+
+  it("accepts a document directory for --scene", () => {
+    const scene = newScene();
+    const out = layersAction({ scene: path.dirname(scene) });
+    expect(out).toContain("canvas 80x60");
   });
 });
 
@@ -137,7 +173,7 @@ describe("draw", () => {
       strokeWidth: 2,
       scene,
     });
-    expect(msg).toBe("added rect layer 'rect'");
+    expect(msg).toBe(`added rect layer 'rect' → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "shape") throw new Error("expected shape layer");
     expect(layer.shape).toBe("rect");
@@ -167,7 +203,7 @@ describe("draw", () => {
       outlineWidth: 8,
       scene,
     });
-    expect(msg).toBe("added arrow layer 'arrow'");
+    expect(msg).toBe(`added arrow layer 'arrow' → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "arrow") throw new Error("expected arrow layer");
     expect(layer.arrow).toMatchObject({
@@ -206,7 +242,7 @@ describe("draw", () => {
       rotation: 5,
       scene,
     });
-    expect(msg).toBe("added text layer 'text'");
+    expect(msg).toBe(`added text layer 'text' → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "text") throw new Error("expected text layer");
     expect(layer.text).toMatchObject({
@@ -297,7 +333,7 @@ describe("draw", () => {
   it("gradient stores parsed stops and defaults the anchor when no angle", () => {
     const scene = newScene();
     const msg = gradientAction({ kind: "linear", stops: "0:#000000ff, 1:#00000000", scene });
-    expect(msg).toBe("added gradient layer 'gradient'");
+    expect(msg).toBe(`added gradient layer 'gradient' → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "gradient") throw new Error("expected gradient layer");
     expect(layer.gradient.anchor).toBe("top");
@@ -321,7 +357,7 @@ describe("draw", () => {
   it("alpha-gradient builds two stops from color + from/to alphas", () => {
     const scene = newScene();
     const msg = alphaGradientAction({ color: "#102030", from: 1, to: 0, kind: "linear", scene });
-    expect(msg).toBe("added gradient layer 'alpha-gradient'");
+    expect(msg).toBe(`added gradient layer 'alpha-gradient' → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "gradient") throw new Error("expected gradient layer");
     expect(layer.gradient.stops).toEqual([
@@ -383,7 +419,7 @@ describe("layer ops", () => {
     const scene = newScene();
     rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
     rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "b" });
-    expect(deleteAction("a", { scene })).toBe("deleted a");
+    expect(deleteAction("a", { scene })).toBe(`deleted a → ${scene}`);
     expect(readScene(scene).layers.map((l) => l.id)).toEqual(["b"]);
   });
 
@@ -394,7 +430,7 @@ describe("layer ops", () => {
     }
     const order = () => readScene(scene).layers.map((l) => l.id);
 
-    expect(moveAction("a", { up: true, scene })).toBe("a: moved to index 1");
+    expect(moveAction("a", { up: true, scene })).toBe(`a: moved to index 1 → ${scene}`);
     expect(order()).toEqual(["b", "a", "c"]);
     moveAction("c", { down: true, scene });
     expect(order()).toEqual(["b", "c", "a"]);
@@ -429,7 +465,7 @@ describe("layer ops", () => {
     addAction(path.join(dir, "img.png"), { scene });
     const msg = await fitAction("img", { mode: "fit", percent: 100, anchor: "center", scene });
     // scale = min(80/20, 60/10) = 4 -> 80x40, centered vertically
-    expect(msg).toBe("img: fit 100% -> scale=4 x=0 y=10");
+    expect(msg).toBe(`img: fit 100% -> scale=4 x=0 y=10 → ${scene}`);
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "image") throw new Error("expected image layer");
     expect(layer.transform).toMatchObject({ scale: 4, x: 0, y: 10 });
@@ -446,7 +482,9 @@ describe("layer ops", () => {
     const dir = path.dirname(scene);
     await writePng(path.join(dir, "img.png"), 8, 8);
     addAction(path.join(dir, "img.png"), { scene });
-    expect(rotateAction("img", { ccw: 30, pivot: "center", scene })).toBe("img: rotation=-30");
+    expect(rotateAction("img", { ccw: 30, pivot: "center", scene })).toBe(
+      `img: rotation=-30 → ${scene}`,
+    );
     rotateAction("img", { cw: 10, pivot: "center", scene });
     const layer = readScene(scene).layers[0];
     if (layer?.type !== "image") throw new Error("expected image layer");
@@ -467,7 +505,7 @@ describe("layer ops", () => {
     });
     // 90deg visual ccw about the tail: tip (10,0) -> (0,-10) in y-down coords.
     const msg = rotateAction("arrow", { ccw: 90, pivot: "tail", scene });
-    expect(msg).toBe("arrow: rotated 90 deg ccw around tail");
+    expect(msg).toBe(`arrow: rotated 90 deg ccw around tail → ${scene}`);
     let layer = readScene(scene).layers[0];
     if (layer?.type !== "arrow") throw new Error("expected arrow layer");
     expect(layer.arrow.from_x).toBeCloseTo(0, 6);
@@ -558,7 +596,7 @@ describe("output", () => {
     const scene = shapeScene();
     const out = path.join(path.dirname(scene), "preview.png");
     const msg = await previewAction({ out, max: 40, scene });
-    expect(msg).toBe(`preview -> ${out} (40x30)`);
+    expect(msg).toBe(`preview -> ${out} (40x30) [scene: ${scene}]`);
     const meta = await sharp(out).metadata();
     expect([meta.width, meta.height]).toEqual([40, 30]);
   });
@@ -566,7 +604,7 @@ describe("output", () => {
   it("render writes the full-size (or resized) image", async () => {
     const scene = shapeScene();
     const out = path.join(path.dirname(scene), "out.png");
-    expect(await renderAction({ out, scene })).toBe(`rendered -> ${out}`);
+    expect(await renderAction({ out, scene })).toBe(`rendered -> ${out} [scene: ${scene}]`);
     let meta = await sharp(out).metadata();
     expect([meta.width, meta.height]).toEqual([80, 60]);
 
@@ -578,7 +616,9 @@ describe("output", () => {
   it("export writes a jpg without alpha", async () => {
     const scene = shapeScene();
     const out = path.join(path.dirname(scene), "final.jpg");
-    expect(await exportAction({ out, quality: 80, scene })).toBe(`exported -> ${out}`);
+    expect(await exportAction({ out, quality: 80, scene })).toBe(
+      `exported -> ${out} [scene: ${scene}]`,
+    );
     const meta = await sharp(out).metadata();
     expect(meta.format).toBe("jpeg");
     expect(meta.hasAlpha).toBe(false);
