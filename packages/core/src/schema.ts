@@ -1,20 +1,16 @@
 /**
- * Scene document model and JSON persistence.
+ * Scene schema and pure model operations (browser-safe — no node imports).
  *
  * The scene is the single source of truth: an ordered list of layers over a fixed
  * design canvas. Positions and sizes are in canvas-space pixels (DESIGN.md §5).
  * Layer order is paint order; index 0 is the bottom (back) layer.
  *
- * The zod schema IS the wire contract — it must accept every scene.json the
- * original Python engine wrote, and serialization preserves its field layout.
+ * The zod schema IS the wire contract; file IO lives in doc.ts.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
 import { z } from "zod";
 
 export const SCENE_VERSION = 1;
-export const CACHE_DIR = ".scene_cache";
 
 // ---- schema -------------------------------------------------------------------
 
@@ -25,12 +21,19 @@ const TransformSchema = z.object({
   rotation: z.number().default(0), // degrees, clockwise
 });
 
+const MaskRectSchema = z.object({
+  x: z.number().default(0),
+  y: z.number().default(0),
+  w: z.number().optional(),
+  h: z.number().optional(),
+});
+
 const MaskSchema = z.object({
   kind: z.enum(["cutout", "image", "shape"]),
   cache: z.string().nullish(),
   source: z.string().nullish(),
   shape: z.enum(["rect", "ellipse"]).nullish(),
-  rect: z.record(z.string(), z.number()).nullish(),
+  rect: MaskRectSchema.nullish(),
   feather: z.number().default(0),
   invert: z.boolean().default(false),
 });
@@ -55,7 +58,9 @@ const ArrowSpecSchema = z.object({
   head_length: z.number().optional(),
   head_width: z.number().optional(),
   outline: z.string().nullish(),
-  outline_width: z.number().default(0),
+  // Optional so the renderer can default a *missing* value to width * 0.35;
+  // an explicit 0 stays 0.
+  outline_width: z.number().optional(),
 });
 
 const TextShadowSchema = z.object({
@@ -170,40 +175,8 @@ export type Layer = z.infer<typeof LayerSchema>;
 export type Canvas = z.infer<typeof CanvasSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 
-// ---- document (scene + file location) -------------------------------------------
-
-/** A scene bound to its file path — the unit every CLI verb and server op works on. */
-export interface SceneDoc {
-  scene: Scene;
-  path: string;
-}
-
 export function parseScene(data: unknown): Scene {
   return SceneSchema.parse(data);
-}
-
-export function loadScene(scenePath: string): SceneDoc {
-  const raw = readFileSync(scenePath, "utf8");
-  return { scene: parseScene(JSON.parse(raw)), path: path.resolve(scenePath) };
-}
-
-export function saveScene(doc: SceneDoc, to?: string): string {
-  const target = to ? path.resolve(to) : doc.path;
-  writeFileSync(target, `${JSON.stringify(doc.scene, null, 2)}\n`);
-  doc.path = target;
-  return target;
-}
-
-/** Directory that relative layer sources/masks resolve against. */
-export function sceneRoot(doc: SceneDoc): string {
-  return path.dirname(doc.path);
-}
-
-/** Ensure and return the scene's derived-asset cache directory. */
-export function cacheDir(doc: SceneDoc): string {
-  const dir = path.join(sceneRoot(doc), CACHE_DIR);
-  mkdirSync(dir, { recursive: true });
-  return dir;
 }
 
 // ---- layer lookup / ordering -----------------------------------------------------

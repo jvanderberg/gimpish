@@ -13,7 +13,7 @@ import {
   withAlpha,
 } from "@gimpish/core";
 import type { Command } from "commander";
-import { CliError, loadOrFail, parseNum, sceneOption } from "../shared.ts";
+import { CliError, loadOrFail, parseNum, requireAnchor, sceneOption } from "../shared.ts";
 
 /** Insert above `over` when given, otherwise append on top. */
 function insertLayer(doc: SceneDoc, layer: Layer, over?: string): void {
@@ -219,6 +219,7 @@ function addGradient(opts: {
   if (opts.kind !== "linear" && opts.kind !== "radial") {
     throw new CliError("kind must be linear|radial");
   }
+  if (opts.anchor) requireAnchor(opts.anchor);
   const doc = loadOrFail(opts.scene);
   const gradient: GradientSpec = { kind: opts.kind, stops: opts.stops };
   if (opts.angle !== undefined) gradient.angle = opts.angle;

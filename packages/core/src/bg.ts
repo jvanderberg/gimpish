@@ -54,7 +54,10 @@ async function session(): Promise<import("onnxruntime-node").InferenceSession> {
 export async function removeBackground(src: string, out: string): Promise<string> {
   const ort: OrtModule = await import("onnxruntime-node");
 
-  const image = sharp(src).rotate(); // respect EXIF orientation, like PIL
+  // NB: no EXIF auto-orientation — neither the render path nor the original
+  // rembg pipeline applies it, and metadata() reports pre-rotation dimensions,
+  // so orienting here would scramble the rgba assembly for orientations 5-8.
+  const image = sharp(src);
   const meta = await image.metadata();
   const { width, height } = meta;
 
@@ -115,7 +118,7 @@ export async function removeBackground(src: string, out: string): Promise<string
     .raw()
     .toBuffer();
 
-  const rgb = await sharp(src).rotate().removeAlpha().raw().toBuffer();
+  const rgb = await sharp(src).removeAlpha().raw().toBuffer();
   const rgba = Buffer.alloc(width * height * 4);
   for (let p = 0; p < width * height; p += 1) {
     rgba[p * 4] = rgb[p * 3] as number;

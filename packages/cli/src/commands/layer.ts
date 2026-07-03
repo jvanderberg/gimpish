@@ -8,6 +8,7 @@ import {
   findLayer,
   imageSize,
   layerIndex,
+  removeBackground,
   resolveFit,
   rotatePoint,
   saveScene,
@@ -20,6 +21,7 @@ import {
   parseIntStrict,
   parseNum,
   relToScene,
+  requireAnchor,
   sceneOption,
 } from "../shared.ts";
 
@@ -110,6 +112,7 @@ export async function fitAction(
   if (opts.mode !== "fit" && opts.mode !== "fill" && opts.mode !== "cover") {
     throw new CliError("mode must be fit|fill|cover");
   }
+  requireAnchor(opts.anchor);
   const doc = loadOrFail(opts.scene);
   const layer = findLayer(doc.scene, layerId);
   if (layer.type !== "image") throw new CliError("fit applies to image layers");
@@ -174,9 +177,10 @@ export function moveAction(
 
 export function opacityAction(layerId: string, value: number, opts: { scene: string }): string {
   const doc = loadOrFail(opts.scene);
-  findLayer(doc.scene, layerId).opacity = Math.max(0, Math.min(1, value));
+  const clamped = Math.max(0, Math.min(1, value));
+  findLayer(doc.scene, layerId).opacity = clamped;
   saveScene(doc);
-  return `${layerId}: opacity=${value}`;
+  return `${layerId}: opacity=${clamped}`;
 }
 
 export function blendAction(layerId: string, mode: string, opts: { scene: string }): string {
@@ -211,8 +215,6 @@ export function deleteAction(layerId: string, opts: { scene: string }): string {
 }
 
 export async function removeBgAction(layerId: string, opts: { scene: string }): Promise<string> {
-  // Lazy import: the model-backed module (core/src/bg.ts) is heavy to load.
-  const { removeBackground } = await import("@gimpish/core");
   const doc = loadOrFail(opts.scene);
   const layer = findLayer(doc.scene, layerId);
   if (layer.type !== "image") throw new CliError("remove-bg applies to image layers");

@@ -89,6 +89,19 @@ export function createApp(scenePath: string): FastifyInstance {
   const app = fastify();
   const sockets = new Set<WsSocket>();
 
+  // One error shape for every route: {error} (scene-load failures, render
+  // failures, bad requests all surface the same way to the UI).
+  app.setErrorHandler((err: unknown, _req, reply) => {
+    const statusCode =
+      typeof err === "object" &&
+      err !== null &&
+      "statusCode" in err &&
+      typeof err.statusCode === "number"
+        ? err.statusCode
+        : 500;
+    reply.code(statusCode).send({ error: errorMessage(err) });
+  });
+
   // ---- websocket + file watching ------------------------------------------------
 
   app.register(fastifyWebsocket);
@@ -101,8 +114,13 @@ export function createApp(scenePath: string): FastifyInstance {
   });
 
   // Watch the scene file's directory (covers scene.json + .scene_cache writes),
-  // collapsing event bursts into one reload broadcast.
-  const watcher = watch(path.dirname(scene), { ignoreInitial: true });
+  // collapsing event bursts into one reload broadcast. Heavy unrelated trees
+  // are excluded so serving from a project root doesn't watch node_modules.
+  const watcher = watch(path.dirname(scene), {
+    ignoreInitial: true,
+    ignored: (watchedPath: string) =>
+      /(?:^|\/)(?:node_modules|\.git|\.venv|dist)(?:\/|$)/.test(watchedPath),
+  });
   let pending: NodeJS.Timeout | undefined;
   watcher.on("all", () => {
     clearTimeout(pending);
@@ -136,14 +154,7 @@ export function createApp(scenePath: string): FastifyInstance {
 
   // ---- scene API -------------------------------------------------------------------
 
-  app.get("/api/scene", async (_req, reply) => {
-    try {
-      return loadScene(scene).scene;
-    } catch (err) {
-      // surface scene-read errors to the UI
-      return reply.code(500).send({ error: errorMessage(err) });
-    }
-  });
+  app.get("/api/scene", async () => loadScene(scene).scene);
 
   app.get<{ Querystring: { max?: string; hide?: string } }>(
     "/api/preview.png",
@@ -161,13 +172,8 @@ export function createApp(scenePath: string): FastifyInstance {
     },
   );
 
-  app.get("/api/geometry", async (_req, reply) => {
-    let doc: SceneDoc;
-    try {
-      doc = loadScene(scene);
-    } catch (err) {
-      return reply.code(500).send({ error: errorMessage(err) });
-    }
+  app.get("/api/geometry", async () => {
+    const doc = loadScene(scene);
     const boxes: LayerBox[] = [];
     for (const layer of doc.scene.layers) {
       if (!layer.visible) continue;
@@ -205,12 +211,7 @@ export function createApp(scenePath: string): FastifyInstance {
     Params: { id: string };
     Body: { dx?: unknown; dy?: unknown; drot?: unknown; scale?: unknown } | null;
   }>("/api/layer/:id/transform", async (req, reply) => {
-    let doc: SceneDoc;
-    try {
-      doc = loadScene(scene);
-    } catch (err) {
-      return reply.code(500).send({ error: errorMessage(err) });
-    }
+    const doc = loadScene(scene);
     let layer: Layer;
     try {
       layer = findLayer(doc.scene, req.params.id);

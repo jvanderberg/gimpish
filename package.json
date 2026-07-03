@@ -11,7 +11,7 @@
   "scripts": {
     "check": "biome check . && npm run typecheck && npm test",
     "check:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/web",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/web",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build -w @gimpish/web",

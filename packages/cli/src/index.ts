@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import { Command } from "commander";
+import { ZodError, z } from "zod";
 import { registerDrawCommands } from "./commands/draw.ts";
 import { registerLayerCommands } from "./commands/layer.ts";
 import { registerOutputCommands } from "./commands/output.ts";
@@ -34,9 +35,11 @@ export function run(argv: string[]): void {
     .parseAsync(argv)
     .catch((err: unknown) => {
       if (err instanceof CliError) {
-        console.error(err.message);
+        console.error(err.message); // expected user error: message only
+      } else if (err instanceof ZodError) {
+        console.error(`invalid scene: ${z.prettifyError(err)}`);
       } else {
-        console.error(err instanceof Error ? err.message : String(err));
+        console.error(err); // unexpected: full error with stack
       }
       process.exitCode = 1;
     });

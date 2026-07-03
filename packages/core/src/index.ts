@@ -1,7 +1,5 @@
 export * from "./bg.ts";
-export * from "./color.ts";
-export * from "./editor.ts";
-export * from "./geometry.ts";
+export * from "./doc.ts";
+export * from "./model.ts";
 export * from "./render/index.ts";
-export * from "./render/raster.ts";
-export * from "./scene.ts";
+export type { Raster } from "./render/raster.ts";

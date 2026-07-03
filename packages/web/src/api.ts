@@ -84,20 +84,10 @@ export interface Scene {
   layers: Layer[];
 }
 
-export interface LayerBox {
-  id: string;
-  type: string;
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-  rotation: number;
-  pivotx: number;
-  pivoty: number;
-  move: boolean;
-  rotate: boolean;
-  scale: boolean;
-}
+// The selection-box contract is core's own type — one definition, no drift.
+export type { LayerBox } from "@gimpish/core/model";
+
+import type { LayerBox } from "@gimpish/core/model";
 
 export interface Geometry {
   canvas: { width: number; height: number };

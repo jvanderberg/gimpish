@@ -7,10 +7,12 @@
  * pipeline shape as the original Python engine, validated by the golden fixtures.
  */
 
+import { statSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import type { Layer, Mask, SceneDoc, ShapeLayer } from "../scene.ts";
-import { sceneRoot } from "../scene.ts";
+import type { SceneDoc } from "../doc.ts";
+import { sceneRoot } from "../doc.ts";
+import type { Layer, Mask, ShapeLayer } from "../schema.ts";
 import {
   alphaBounds,
   applyMaskBand,
@@ -63,14 +65,16 @@ async function rasterizeSvg(svg: string): Promise<Raster> {
   return toRaster(sharp(Buffer.from(svg)));
 }
 
-/** Cached natural (unscaled) image dimensions, keyed by resolved path. */
+/** Cached natural (unscaled) image dimensions, keyed by resolved path + mtime
+ * so a replaced file invalidates its entry during a long `serve` session. */
 const sizeCache = new Map<string, { width: number; height: number }>();
 
 export async function imageSize(file: string): Promise<{ width: number; height: number }> {
-  const key = path.resolve(file);
+  const resolved = path.resolve(file);
+  const key = `${resolved}@${statSync(resolved).mtimeMs}`;
   const hit = sizeCache.get(key);
   if (hit) return hit;
-  const meta = await sharp(key).metadata();
+  const meta = await sharp(resolved).metadata();
   const size = { width: meta.width, height: meta.height };
   sizeCache.set(key, size);
   return size;
@@ -127,10 +131,10 @@ async function loadMaskBand(root: string, mask: Mask, w: number, h: number): Pro
 
 function shapeMaskBand(mask: Mask, w: number, h: number): Buffer {
   const rect = mask.rect ?? { x: 0, y: 0, w, h };
-  const rx = rect["x"] ?? 0;
-  const ry = rect["y"] ?? 0;
-  const rw = rect["w"] ?? w;
-  const rh = rect["h"] ?? h;
+  const rx = rect.x;
+  const ry = rect.y;
+  const rw = rect.w ?? w;
+  const rh = rect.h ?? h;
   const out = Buffer.alloc(w * h);
 
   if (mask.shape === "ellipse") {

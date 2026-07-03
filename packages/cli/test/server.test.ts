@@ -164,7 +164,7 @@ describe("GET /api/preview.png", () => {
     const hidden = await app.inject({ url: "/api/preview.png?hide=photo" });
     expect(hidden.statusCode).toBe(200);
     expectPng(hidden.rawPayload);
-    expect(hidden.rawPayload.length).not.toBe(full.rawPayload.length);
+    expect(Buffer.compare(hidden.rawPayload, full.rawPayload)).not.toBe(0);
   });
 });
 

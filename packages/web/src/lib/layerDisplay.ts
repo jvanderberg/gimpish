@@ -4,8 +4,6 @@ import type { Layer } from "../api";
 
 const ICONS: Record<string, string> = {
   image: "🖼",
-  shape: "◆",
-  gradient: "▧",
   arrow: "➜",
   text: "T",
 };
@@ -32,7 +30,7 @@ export function layerSubtitle(layer: Layer): string {
     }
     case "text": {
       const t = layer.text;
-      const content = t.content.replaceAll("\\n", " ");
+      const content = t.content.replaceAll("\n", " ");
       return `${content}  ·  ${t.font} ${t.size}`;
     }
     default:

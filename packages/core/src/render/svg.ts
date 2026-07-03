@@ -7,7 +7,7 @@
 
 import { svgColor } from "../color.ts";
 import { anchorFractions } from "../geometry.ts";
-import type { ArrowSpec, Canvas, GradientSpec, ShapeLayer, TextSpec } from "../scene.ts";
+import type { ArrowSpec, Canvas, GradientSpec, ShapeLayer, TextSpec } from "../schema.ts";
 
 export function escapeXml(text: string): string {
   return text

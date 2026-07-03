@@ -7,7 +7,7 @@
  */
 
 import { anchorFractions, rotatePoint } from "./geometry.ts";
-import type { Canvas, GradientSpec, Layer, Scene } from "./scene.ts";
+import type { Canvas, GradientSpec, Layer, Scene } from "./schema.ts";
 
 /** Selection box in canvas pixels, with rotation pivot and capability flags. */
 export interface LayerBox {
@@ -239,7 +239,7 @@ export function applyScale(layer: Layer, f: number, naturalSize?: Size): void {
       a.width *= factor;
       if (a.head_length != null) a.head_length *= factor;
       if (a.head_width != null) a.head_width *= factor;
-      a.outline_width *= factor;
+      if (a.outline_width != null) a.outline_width *= factor;
       return;
     }
     case "gradient":

@@ -57,7 +57,7 @@ export function App() {
         setSel(null);
         return;
       }
-      if (!rawSelBox || drag) return;
+      if (!rawSelBox?.move || drag) return;
       const step = e.shiftKey ? 10 : 1;
       const d = ARROW_DELTAS[e.key];
       if (!d) return;
