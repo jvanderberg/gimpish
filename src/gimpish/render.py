@@ -162,7 +162,14 @@ def _render_shape(layer: Layer) -> Tuple[pyvips.Image, float, float]:
         img = _render_ellipse(w, h, fill, stroke, sw)
     else:
         img = _render_rect(w, h, fill, stroke, sw)
-    return img, float(rect.get("x", 0)), float(rect.get("y", 0))
+
+    x, y = float(rect.get("x", 0)), float(rect.get("y", 0))
+    rot = float(rect.get("rotation", 0))
+    if rot:
+        cx, cy = x + img.width / 2, y + img.height / 2
+        img = img.similarity(angle=rot)
+        x, y = cx - img.width / 2, cy - img.height / 2
+    return img, x, y
 
 
 def _render_rect(w, h, fill, stroke, sw) -> pyvips.Image:
@@ -211,7 +218,11 @@ def _render_gradient(scene: Scene, layer: Layer) -> Tuple[pyvips.Image, float, f
     xy = pyvips.Image.xyz(W, H)
 
     if g.get("kind") == "radial":
-        fx, fy = ANCHORS.get(g.get("anchor", "center"), (0.5, 0.5))
+        center = g.get("center")  # explicit [fx, fy] fractions override named anchor
+        if center:
+            fx, fy = float(center[0]), float(center[1])
+        else:
+            fx, fy = ANCHORS.get(g.get("anchor", "center"), (0.5, 0.5))
         cx, cy = fx * W, fy * H
         dx, dy = xy.extract_band(0) - cx, xy.extract_band(1) - cy
         dist = (dx * dx + dy * dy) ** 0.5
@@ -445,30 +456,37 @@ def _render_text(scene: Scene, layer: Layer) -> Tuple[pyvips.Image, float, float
 # ---- scene composition -----------------------------------------------------------
 
 
+def _render_layer(scene: Scene, layer: Layer) -> Tuple[pyvips.Image, float, float]:
+    """Render one layer to an (image, x, y) triple in canvas space."""
+    if layer.type == "image":
+        return _render_image(scene, layer)
+    if layer.type == "shape":
+        return _render_shape(layer)
+    if layer.type == "gradient":
+        return _render_gradient(scene, layer)
+    if layer.type == "arrow":
+        return _render_arrow(scene, layer)
+    if layer.type == "text":
+        return _render_text(scene, layer)
+    raise ValueError(f"unknown layer type {layer.type!r}")
+
+
 def render_scene(
-    scene: Scene, width: Optional[int] = None, height: Optional[int] = None
+    scene: Scene, width: Optional[int] = None, height: Optional[int] = None,
+    hide: Optional[set] = None,
 ) -> pyvips.Image:
-    """Composite the whole scene; optionally scale the result to width/height."""
+    """Composite the whole scene; optionally scale the result to width/height.
+
+    `hide` is a set of layer ids to skip — used by the live editor to drop the
+    layer being dragged so a moving ghost sprite can float over the rest."""
     W, H = scene.canvas.width, scene.canvas.height
     bg = scene.canvas.background
     base = _transparent(W, H) if bg in (None, "transparent") else _solid(W, H, parse_color(bg))
 
     for layer in scene.layers:
-        if not layer.visible:
+        if not layer.visible or (hide and layer.id in hide):
             continue
-        if layer.type == "image":
-            img, x, y = _render_image(scene, layer)
-        elif layer.type == "shape":
-            img, x, y = _render_shape(layer)
-        elif layer.type == "gradient":
-            img, x, y = _render_gradient(scene, layer)
-        elif layer.type == "arrow":
-            img, x, y = _render_arrow(scene, layer)
-        elif layer.type == "text":
-            img, x, y = _render_text(scene, layer)
-        else:
-            raise ValueError(f"unknown layer type {layer.type!r}")
-
+        img, x, y = _render_layer(scene, layer)
         img = _apply_opacity(img, layer.opacity)
         placed = img.embed(round(x), round(y), W, H, extend="black")
         mode = BLEND_MODES.get(layer.blend, "over")
@@ -481,6 +499,22 @@ def render_scene(
     return base.cast("uchar")
 
 
+def render_layer_sprite(scene: Scene, layer: Layer, max_dim: int = 1400) -> pyvips.Image:
+    """Render a single layer alone on a transparent full-canvas, at preview scale.
+
+    This is the draggable "ghost": the client floats it over a preview that has
+    the same layer hidden, and moves/rotates it live with CSS transforms."""
+    W, H = scene.canvas.width, scene.canvas.height
+    img, x, y = _render_layer(scene, layer)
+    img = _apply_opacity(img, layer.opacity)
+    placed = img.embed(round(x), round(y), W, H, extend="black")
+    base = _transparent(W, H).composite2(placed, "over", x=0, y=0)
+    if max(W, H) > max_dim:
+        scale = max_dim / max(W, H)
+        base = base.resize(scale)
+    return base.cast("uchar")
+
+
 def render_to_file(scene: Scene, out: Path, width=None, height=None, **save_opts) -> Path:
     img = render_scene(scene, width=width, height=height)
     out = Path(out)
@@ -490,9 +524,9 @@ def render_to_file(scene: Scene, out: Path, width=None, height=None, **save_opts
     return out
 
 
-def render_preview(scene: Scene, max_dim: int = 1024) -> pyvips.Image:
+def render_preview(scene: Scene, max_dim: int = 1024, hide: Optional[set] = None) -> pyvips.Image:
     W, H = scene.canvas.width, scene.canvas.height
     if max(W, H) <= max_dim:
-        return render_scene(scene)
+        return render_scene(scene, hide=hide)
     scale = max_dim / max(W, H)
-    return render_scene(scene, width=round(W * scale), height=round(H * scale))
+    return render_scene(scene, width=round(W * scale), height=round(H * scale), hide=hide)
