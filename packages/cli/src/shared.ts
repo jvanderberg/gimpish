@@ -1,6 +1,6 @@
 /** Helpers shared by all CLI verbs. */
 
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { SceneDoc } from "@gimpish/core";
 import { ANCHORS, loadScene, saveScene, sceneRoot } from "@gimpish/core";
@@ -13,6 +13,15 @@ export const ASSETS_DIR = "assets";
 
 /** User-facing failure: printed without a stack trace, exit code 1. */
 export class CliError extends Error {}
+
+/**
+ * Package version, read at runtime. Both layouts put package.json one level
+ * above this file's directory: src/ in the repo, dist/ in a published install.
+ */
+export function cliVersion(): string {
+  const pkg = path.resolve(import.meta.dirname, "../package.json");
+  return (JSON.parse(readFileSync(pkg, "utf8")) as { version: string }).version;
+}
 
 /**
  * The directory the user invoked gimpish from, captured before `-C` chdirs.

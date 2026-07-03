@@ -27,20 +27,20 @@ loop or a cloud image service.
 
 ## Install
 
-Requirements: Node 24.18+ (see `.nvmrc`).
+Requirements: Node 20.19+.
 
 ```bash
-nvm use              # or any Node 24.18+
-npm install
+npm install gimpish     # in a project, or -g for global; npx gimpish works too
+npx gimpish demo        # example scene + preview.png — the fastest first contact
+npx gimpish --help      # the workflow primer + full verb surface
+npx gimpish doctor      # environment sanity check (node, native deps, ports)
 ```
 
-Inside the repo the CLI is `npx gimpish` (or `npm link -w gimpish` for a global
-`gimpish`). Node 24 runs the TypeScript sources directly — the CLI and server
-have no build step. Two things are deferred until first use:
+`gimpish layer remove-bg` downloads the U²-Net model (~176 MB) to
+`~/.u2net/u2net.onnx` on first run, then works offline. Everything else ships
+in the package, web editor included.
 
-- `npm run build` — bundles the web editor; only needed before `gimpish serve`.
-- `gimpish layer remove-bg` — downloads the U²-Net model (~176 MB) to
-  `~/.u2net/u2net.onnx` on first run, then works offline.
+(Developing gimpish itself needs Node 24 — see [Development](#development).)
 
 ## Quickstart
 
@@ -49,7 +49,7 @@ background, and export the result:
 
 ```bash
 gimpish init -w 1920 -h 1080          # or: gimpish init poster/ -w 1920 -h 1080
-
+                                      # (gimpish demo scaffolds a ready-made example)
 gimpish add downloads/background.jpg --name bg
 gimpish layer fit bg --mode fill
 
@@ -77,7 +77,8 @@ Run the editor server beside the scene:
 gimpish serve
 ```
 
-Then open `http://127.0.0.1:8765`.
+Then open `http://127.0.0.1:8765`. If 8765 is busy, serve picks the next free
+port and says so; an explicit `--port` fails instead with the retry command.
 
 While running, the server advertises itself in `.scene_cache/serve.json`
 (`{pid, port, url, …}`); a second `gimpish serve` on the same scene reports the
@@ -313,6 +314,19 @@ examples under `examples/`.
   trigger extra refreshes.
 
 ## Development
+
+Working on gimpish itself needs Node 24.18+ (see `.nvmrc`) — the repo runs the
+TypeScript sources directly, no build step:
+
+```bash
+nvm use
+npm install
+npx gimpish --help   # the CLI, straight from src/
+npm run build        # web editor bundle; only needed before `gimpish serve`
+```
+
+(Published installs don't need any of this: the npm package ships a plain-JS
+bundle with the web editor prebuilt, and runs on Node 20.19+.)
 
 ```bash
 npm run check       # biome lint/format + tsc across all packages

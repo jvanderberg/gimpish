@@ -1,6 +1,6 @@
 {
   "name": "gimpish",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent-native image composition: a CLI + scene.json contract + live browser editor, built for LLM workflows. Layers, masks, local background removal, deterministic rendering.",
   "keywords": [
     "image",

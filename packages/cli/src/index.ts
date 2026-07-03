@@ -4,12 +4,15 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { ZodError, z } from "zod";
+import { registerDemoCommand } from "./commands/demo.ts";
+import { registerDoctorCommand } from "./commands/doctor.ts";
 import { registerDrawCommands } from "./commands/draw.ts";
 import { registerLayerCommands } from "./commands/layer.ts";
 import { registerOutputCommands } from "./commands/output.ts";
 import { layersAction, registerSceneCommands } from "./commands/scene.ts";
 import {
   CliError,
+  cliVersion,
   DEFAULT_SCENE,
   parseIntStrict,
   resolveScenePath,
@@ -23,6 +26,7 @@ document with -C <dir> (before the verb) or --scene <path>; every command
 echoes the scene it touched.
 
 Quickstart:
+  gimpish demo                            example scene + preview.png to learn from
   gimpish init -w 1600 -h 900             create a scene here (or: gimpish init <dir>)
   gimpish add photo.jpg --name subject    import an image as the top layer
   gimpish layer fit subject --mode fit --percent 70 --anchor right
@@ -38,6 +42,7 @@ export function buildProgram(): Command {
   program
     .name("gimpish")
     .description("Agent-native image composition.")
+    .version(cliVersion())
     .option("-C <dir>", "Run as if invoked from <dir> (the document directory).")
     .addHelpText("after", `\n${WORKFLOW_HELP}`);
 
@@ -62,15 +67,19 @@ export function buildProgram(): Command {
   registerOutputCommands(program);
   registerLayerCommands(program);
   registerDrawCommands(program);
+  registerDemoCommand(program);
+  registerDoctorCommand(program);
 
-  sceneOption(
+  const serve = sceneOption(
     program
       .command("serve")
       .description("Start the live web preview server (the human's editor window).")
       .option("--port <n>", "Port to listen on.", parseIntStrict, 8765),
-  ).action(async (opts: { port: number; scene: string }) => {
+  );
+  serve.action(async (opts: { port: number; scene: string }) => {
     const { runServer } = await import("./server/run.ts");
-    await runServer(resolveScenePath(opts.scene), opts.port);
+    const portExplicit = serve.getOptionValueSource("port") !== "default";
+    await runServer(resolveScenePath(opts.scene), opts.port, portExplicit);
   });
 
   return program;

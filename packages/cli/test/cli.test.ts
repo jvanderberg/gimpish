@@ -636,3 +636,28 @@ describe("output", () => {
     expect([meta.width, meta.height]).toEqual([640, 420]);
   });
 });
+
+describe("demo", () => {
+  it("scaffolds an example scene and renders its preview", async () => {
+    const dir = path.join(tempDir(), "demo");
+    const { demoAction } = await import("../src/commands/demo.ts");
+    const msg = await demoAction(dir);
+    expect(msg).toContain("demo ready");
+    const scene = readScene(path.join(dir, "scene.json"));
+    expect(scene.layers.length).toBeGreaterThanOrEqual(5);
+    expect(scene.layers.map((l) => l.id)).toContain("headline");
+    const meta = await sharp(path.join(dir, "preview.png")).metadata();
+    expect(meta.width).toBe(1024);
+    await expect(demoAction(dir)).rejects.toThrow(/already exists/);
+  });
+});
+
+describe("doctor", () => {
+  it("reports a healthy environment here", async () => {
+    const { doctorAction } = await import("../src/commands/doctor.ts");
+    const { report, healthy } = await doctorAction();
+    expect(healthy).toBe(true);
+    expect(report).toContain("node");
+    expect(report).toContain("sharp");
+  });
+});

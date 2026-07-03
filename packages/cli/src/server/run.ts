@@ -1,6 +1,7 @@
 /** Boot the live-preview server on localhost and report the URL. */
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { CACHE_DIR } from "@gimpish/core";
 import { CliError, displayScene } from "../shared.ts";
@@ -38,7 +39,23 @@ export function readLiveServer(scenePath: string): ServeInfo | null {
   return info;
 }
 
-export async function runServer(scenePath: string, port = 8765): Promise<void> {
+export async function portFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", () => resolve(false));
+    probe.listen({ host: "127.0.0.1", port }, () => probe.close(() => resolve(true)));
+  });
+}
+
+/** First free port in [start, start+tries). */
+export async function findFreePort(start: number, tries = 20): Promise<number> {
+  for (let port = start; port < start + tries; port += 1) {
+    if (await portFree(port)) return port;
+  }
+  throw new CliError(`no free port in ${start}–${start + tries - 1}.`);
+}
+
+export async function runServer(scenePath: string, port = 8765, portExplicit = false): Promise<void> {
   const resolved = path.resolve(scenePath);
   if (!existsSync(resolved)) {
     throw new CliError(
@@ -52,6 +69,18 @@ export async function runServer(scenePath: string, port = 8765): Promise<void> {
     );
   }
 
+  let chosenPort = port;
+  if (portExplicit) {
+    if (!(await portFree(port))) {
+      throw new CliError(`port ${port} is in use — try \`gimpish serve --port ${port + 1}\`.`);
+    }
+  } else {
+    chosenPort = await findFreePort(port);
+    if (chosenPort !== port) {
+      console.log(`port ${port} is in use — using ${chosenPort} instead`);
+    }
+  }
+
   const infoFile = serveInfoPath(resolved);
   const app = createApp(resolved);
   app.addHook("onClose", async () => {
@@ -61,10 +90,10 @@ export async function runServer(scenePath: string, port = 8765): Promise<void> {
       // already gone — nothing to clean up
     }
   });
-  await app.listen({ host: "127.0.0.1", port });
+  await app.listen({ host: "127.0.0.1", port: chosenPort });
 
   const address = app.server.address();
-  const boundPort = typeof address === "object" && address ? address.port : port;
+  const boundPort = typeof address === "object" && address ? address.port : chosenPort;
   const url = `http://127.0.0.1:${boundPort}`;
   const info: ServeInfo = {
     pid: process.pid,
