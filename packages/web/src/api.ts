@@ -137,6 +137,26 @@ export async function postTransform(id: string, body: TransformDelta): Promise<v
   if (!res.ok) throw new Error(`transform post responded ${res.status}`);
 }
 
+// ---- undo / redo -------------------------------------------------------------------
+
+export interface HistoryDepths {
+  undo: number;
+  redo: number;
+}
+
+export function fetchHistory(): Promise<HistoryDepths> {
+  return getJSON<HistoryDepths>("/api/history");
+}
+
+/** Undo/redo the last scene.json change (any writer: editor, CLI, agent). */
+export async function postHistoryOp(op: "undo" | "redo"): Promise<void> {
+  const res = await fetch(`/api/${op}`, { method: "POST" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `${op} responded ${res.status}`);
+  }
+}
+
 /** Move a layer to an absolute paint-order index (0 = back/bottom). */
 export async function reorderLayer(id: string, index: number): Promise<void> {
   const res = await fetch(`/api/layer/${encodeURIComponent(id)}/order`, {
@@ -156,9 +176,15 @@ export async function deleteLayer(id: string): Promise<void> {
 
 export type ExportFormat = "png" | "jpg" | "webp";
 
-/** Full-resolution render download (server sets Content-Disposition). */
-export function exportUrl(format: ExportFormat): string {
-  return `/api/export?format=${format}`;
+/** Render download URL (server sets Content-Disposition); omit size for native resolution. */
+export function exportUrl(
+  format: ExportFormat,
+  size: { width?: number; height?: number } = {},
+): string {
+  const params = new URLSearchParams({ format });
+  if (size.width) params.set("width", String(size.width));
+  if (size.height) params.set("height", String(size.height));
+  return `/api/export?${params.toString()}`;
 }
 
 /** Scene + all referenced assets as a relocatable .gimpish zip. */

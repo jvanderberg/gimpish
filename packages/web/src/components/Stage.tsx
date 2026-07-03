@@ -4,9 +4,10 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react";
-import { useRef } from "react";
-import { BUNDLE_URL, type Canvas, exportUrl, type LayerBox } from "../api";
+import type { Canvas, HistoryDepths, LayerBox } from "../api";
 import type { Size } from "../lib/geometry";
+import { DownloadMenu } from "./DownloadMenu";
+import { ICON_IMPORT, ICON_REDO, ICON_REFRESH, ICON_UNDO } from "./icons";
 import { Overlay } from "./Overlay";
 
 export interface Toast {
@@ -28,6 +29,8 @@ interface StageProps {
   live: boolean;
   dropActive: boolean;
   toasts: Toast[];
+  history: HistoryDepths;
+  onHistory: (op: "undo" | "redo") => void;
   onRefresh: () => void;
   onImportClick: () => void;
   onDragEnter: (e: ReactDragEvent<HTMLDivElement>) => void;
@@ -53,6 +56,8 @@ export function Stage({
   live,
   dropActive,
   toasts,
+  history,
+  onHistory,
   onRefresh,
   onImportClick,
   onDragEnter,
@@ -63,9 +68,6 @@ export function Stage({
   onPointerMove,
   onPointerUp,
 }: StageProps) {
-  const dlRef = useRef<HTMLDetailsElement | null>(null);
-  const closeMenu = () => dlRef.current?.removeAttribute("open");
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop file target; keyboard users have the Import button for the same action
     <div
@@ -83,28 +85,44 @@ export function Stage({
           {canvas ? `  ·  ${canvas.width}×${canvas.height}  ·  bg ${canvas.background}` : ""}
         </span>
         <div className="actions">
-          <button className="btn" type="button" onClick={onImportClick}>
-            Import
+          <button
+            className="btn icon"
+            type="button"
+            title="Undo (⌘Z) — any scene.json change: editor, CLI, or agent"
+            aria-label="Undo"
+            disabled={history.undo === 0}
+            onClick={() => onHistory("undo")}
+          >
+            {ICON_UNDO}
           </button>
-          <details className="dl" ref={dlRef}>
-            <summary className="btn">Download</summary>
-            <div className="dl-menu">
-              <a href={exportUrl("png")} download onClick={closeMenu}>
-                PNG (full res)
-              </a>
-              <a href={exportUrl("jpg")} download onClick={closeMenu}>
-                JPG
-              </a>
-              <a href={exportUrl("webp")} download onClick={closeMenu}>
-                WebP
-              </a>
-              <a href={BUNDLE_URL} download onClick={closeMenu}>
-                Bundle (.gimpish)
-              </a>
-            </div>
-          </details>
-          <button className="btn" type="button" onClick={onRefresh}>
-            Refresh
+          <button
+            className="btn icon"
+            type="button"
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+            disabled={history.redo === 0}
+            onClick={() => onHistory("redo")}
+          >
+            {ICON_REDO}
+          </button>
+          <button
+            className="btn icon"
+            type="button"
+            title="Import images or a .gimpish bundle"
+            aria-label="Import"
+            onClick={onImportClick}
+          >
+            {ICON_IMPORT}
+          </button>
+          <DownloadMenu canvas={canvas} />
+          <button
+            className="btn icon"
+            type="button"
+            title="Refresh"
+            aria-label="Refresh"
+            onClick={onRefresh}
+          >
+            {ICON_REFRESH}
           </button>
         </div>
       </div>

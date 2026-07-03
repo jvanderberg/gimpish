@@ -1,9 +1,17 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
-import { fetchGeometry, fetchScene, type Geometry, type Scene } from "../api";
+import {
+  fetchGeometry,
+  fetchHistory,
+  fetchScene,
+  type Geometry,
+  type HistoryDepths,
+  type Scene,
+} from "../api";
 
 export interface LiveScene {
   scene: Scene | null;
   geometry: Geometry;
+  history: HistoryDepths;
   err: string | null;
   setErr: Dispatch<SetStateAction<string | null>>;
   ts: number;
@@ -12,6 +20,7 @@ export interface LiveScene {
 }
 
 const EMPTY_GEOMETRY: Geometry = { canvas: { width: 0, height: 0 }, boxes: [] };
+const EMPTY_HISTORY: HistoryDepths = { undo: 0, redo: 0 };
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -25,15 +34,17 @@ function errorMessage(e: unknown): string {
 export function useLiveScene(): LiveScene {
   const [scene, setScene] = useState<Scene | null>(null);
   const [geometry, setGeometry] = useState<Geometry>(EMPTY_GEOMETRY);
+  const [history, setHistory] = useState<HistoryDepths>(EMPTY_HISTORY);
   const [err, setErr] = useState<string | null>(null);
   const [ts, setTs] = useState<number>(() => Date.now());
   const [live, setLive] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, g] = await Promise.all([fetchScene(), fetchGeometry()]);
+      const [s, g, h] = await Promise.all([fetchScene(), fetchGeometry(), fetchHistory()]);
       setScene(s);
       setGeometry(g);
+      setHistory(h);
       setErr(null);
     } catch (e) {
       setErr(errorMessage(e));
@@ -72,5 +83,5 @@ export function useLiveScene(): LiveScene {
     };
   }, [refresh]);
 
-  return { scene, geometry, err, setErr, ts, live, refresh };
+  return { scene, geometry, history, err, setErr, ts, live, refresh };
 }

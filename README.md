@@ -89,6 +89,16 @@ In the layer panel, drag rows to reorder the stack (an accent line marks where
 the layer will land) and remove a layer with its × button or the Delete key —
 deleting a layer never touches asset files on disk.
 
+### Undo / redo
+
+Undo/Redo buttons (and ⌘Z / ⇧⌘Z / Ctrl+Z / Ctrl+Y) roll the scene back one
+change at a time. History is content-based on `scene.json`: every change the
+server observes is one step, whoever wrote it — an editor drag, a CLI verb, or
+an agent editing the JSON directly — so you can undo an LLM's edit from the
+browser. The stack (last 100 states) lives in the serve process and resets
+when it restarts. Endpoints: `POST /api/undo`, `POST /api/redo`,
+`GET /api/history`.
+
 ### Import (drag-and-drop / upload)
 
 Drop image files anywhere on the stage (or use the **Import** button). Each

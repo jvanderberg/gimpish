@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteLayer,
   importFile,
+  postHistoryOp,
   postTransform,
   previewUrl,
   reorderLayer,
@@ -29,7 +30,7 @@ const ARROW_DELTAS: Record<string, [number, number]> = {
 };
 
 export function App() {
-  const { scene, geometry, err, setErr, ts, live, refresh } = useLiveScene();
+  const { scene, geometry, history, err, setErr, ts, live, refresh } = useLiveScene();
   const [sel, setSel] = useState<string | null>(null);
   const { ref: wrapRef, size: avail } = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -145,9 +146,27 @@ export function App() {
     [pushToast],
   );
 
-  // Delete/Backspace removes the selected layer (when not mid-drag).
+  const onHistory = useCallback(
+    (op: "undo" | "redo") => {
+      // The write trips the watcher -> ws reload; scene + depths refresh themselves.
+      postHistoryOp(op).catch((e: unknown) => {
+        pushToast(e instanceof Error ? e.message : String(e), "err");
+      });
+    },
+    [pushToast],
+  );
+
+  // Delete/Backspace removes the selected layer; Cmd/Ctrl+Z undoes (Shift or Y = redo).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey) {
+        const key = e.key.toLowerCase();
+        if (key === "z" || key === "y") {
+          e.preventDefault();
+          onHistory(key === "y" || e.shiftKey ? "redo" : "undo");
+        }
+        return;
+      }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (!sel || drag) return;
       e.preventDefault();
@@ -155,7 +174,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sel, drag, onDelete]);
+  }, [sel, drag, onDelete, onHistory]);
 
   const onDragEnter = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
     if (!hasFiles(e)) return;
@@ -211,6 +230,8 @@ export function App() {
         live={live}
         dropActive={dropActive}
         toasts={toasts}
+        history={history}
+        onHistory={onHistory}
         onRefresh={() => void refresh()}
         onImportClick={() => fileInput.current?.click()}
         onDragEnter={onDragEnter}

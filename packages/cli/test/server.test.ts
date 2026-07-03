@@ -302,6 +302,68 @@ describe("POST /api/layer/:id/transform", () => {
   });
 });
 
+describe("undo/redo", () => {
+  function panelX(): number {
+    return (readSceneFromDisk().layers.find((l) => l.id === "panel") as ShapeLayer).rect.x;
+  }
+
+  it("undoes and redoes an editor mutation", async () => {
+    await app.inject({ method: "POST", url: "/api/layer/panel/transform", payload: { dx: 5 } });
+    expect(panelX()).toBeCloseTo(15);
+
+    const undo = await app.inject({ method: "POST", url: "/api/undo" });
+    expect(undo.statusCode).toBe(200);
+    expect(undo.json()).toEqual({ ok: true, undo: 0, redo: 1 });
+    expect(panelX()).toBeCloseTo(10);
+
+    const redo = await app.inject({ method: "POST", url: "/api/redo" });
+    expect(redo.statusCode).toBe(200);
+    expect(redo.json()).toEqual({ ok: true, undo: 1, redo: 0 });
+    expect(panelX()).toBeCloseTo(15);
+  });
+
+  it("captures external scene writes (CLI / agent edits) as undo steps", async () => {
+    const scene = readSceneFromDisk();
+    const panel = scene.layers.find((l) => l.id === "panel") as ShapeLayer;
+    panel.rect.x = 77;
+    writeFileSync(scenePath, JSON.stringify(scene)); // no watcher wait needed: undo() syncs first
+
+    const undo = await app.inject({ method: "POST", url: "/api/undo" });
+    expect(undo.statusCode).toBe(200);
+    expect(panelX()).toBeCloseTo(10);
+  });
+
+  it("clears redo on a new edit and 409s when history is empty", async () => {
+    const empty = await app.inject({ method: "POST", url: "/api/undo" });
+    expect(empty.statusCode).toBe(409);
+
+    await app.inject({ method: "POST", url: "/api/layer/panel/transform", payload: { dx: 1 } });
+    await app.inject({ method: "POST", url: "/api/undo" });
+    await app.inject({ method: "POST", url: "/api/layer/panel/transform", payload: { dx: 2 } });
+    const redo = await app.inject({ method: "POST", url: "/api/redo" });
+    expect(redo.statusCode).toBe(409);
+  });
+
+  it("stacks multiple steps and reports depths via GET /api/history", async () => {
+    for (const dx of [1, 1, 1]) {
+      await app.inject({ method: "POST", url: "/api/layer/panel/transform", payload: { dx } });
+    }
+    expect((await app.inject({ url: "/api/history" })).json()).toEqual({ undo: 3, redo: 0 });
+
+    await app.inject({ method: "POST", url: "/api/undo" });
+    await app.inject({ method: "POST", url: "/api/undo" });
+    expect((await app.inject({ url: "/api/history" })).json()).toEqual({ undo: 1, redo: 2 });
+    expect(panelX()).toBeCloseTo(11);
+  });
+
+  it("undoes a delete, restoring the layer", async () => {
+    await app.inject({ method: "DELETE", url: "/api/layer/photo" });
+    expect(readSceneFromDisk().layers.map((l) => l.id)).not.toContain("photo");
+    await app.inject({ method: "POST", url: "/api/undo" });
+    expect(readSceneFromDisk().layers.map((l) => l.id)).toContain("photo");
+  });
+});
+
 describe("POST /api/layer/:id/order", () => {
   it("moves a layer to an absolute paint index and persists", async () => {
     const res = await app.inject({
@@ -386,6 +448,23 @@ describe("GET /api/export", () => {
     const res = await app.inject({ url: "/api/export?format=gif" });
     expect(res.statusCode).toBe(400);
     expect((res.json() as { error: string }).error).toContain("gif");
+  });
+
+  it("scales output by width (aspect preserved) or width+height (stretch)", async () => {
+    const half = await app.inject({ url: "/api/export?width=100" });
+    expect(half.statusCode).toBe(200);
+    expect(pngSize(half.rawPayload)).toEqual({ width: 100, height: 60 });
+
+    const stretched = await app.inject({ url: "/api/export?width=100&height=100" });
+    expect(pngSize(stretched.rawPayload)).toEqual({ width: 100, height: 100 });
+  });
+
+  it("ignores invalid sizes and clamps huge ones", async () => {
+    const bad = await app.inject({ url: "/api/export?width=banana" });
+    expect(pngSize(bad.rawPayload)).toEqual({ width: 200, height: 120 }); // native
+
+    const huge = await app.inject({ url: "/api/export?width=999999&height=60" });
+    expect(pngSize(huge.rawPayload).width).toBe(10000);
   });
 });
 

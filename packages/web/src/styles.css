@@ -101,6 +101,24 @@ body {
   border-color: var(--accent);
 }
 
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  border-color: var(--line);
+}
+
+.btn.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .dl {
   position: relative;
 }
@@ -116,13 +134,16 @@ body {
 .dl-menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
-  min-width: 160px;
+  top: calc(100% + 8px);
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  padding: 4px;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 16px;
   z-index: 20;
 }
 
@@ -130,14 +151,114 @@ body {
   display: block;
   color: var(--txt);
   text-decoration: none;
-  font-size: 12px;
-  padding: 7px 10px;
-  border-radius: 5px;
+  font-size: 13px;
+  padding: 9px 12px;
+  border-radius: 6px;
   white-space: nowrap;
 }
 
 .dl-menu a:hover {
   background: #243056;
+}
+
+.dl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.dl-row label {
+  color: var(--dim);
+  width: 42px;
+  flex: none;
+}
+
+.dl-row .unit {
+  color: var(--dim);
+  flex: none;
+}
+
+.dl-row input {
+  width: 76px;
+  padding: 7px 9px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--txt);
+  font: inherit;
+  font-size: 13px;
+}
+
+.dl-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dl-row input:disabled {
+  opacity: 0.45;
+}
+
+.dl-row.seg {
+  gap: 8px;
+}
+
+.dl-row.seg button {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  border-radius: 6px;
+  padding: 7px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dl-row.seg button:hover {
+  border-color: var(--accent);
+}
+
+.dl-row.seg button.on {
+  color: var(--txt);
+  border-color: var(--accent);
+  background: #243056;
+}
+
+.dl-row .lock {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--dim);
+  padding: 6px;
+  margin-left: auto;
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.dl-row .lock.on {
+  color: var(--accent);
+}
+
+.dl-row .lock:hover {
+  border-color: var(--line);
+}
+
+.dl-menu .dl-go {
+  text-align: center;
+  background: #2a2d35;
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+}
+
+.dl-menu .dl-go:hover {
+  border-color: var(--accent);
+  background: #243056;
+}
+
+.dl-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 0 2px;
 }
 
 .drop-overlay {

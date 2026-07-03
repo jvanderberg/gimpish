@@ -35,6 +35,7 @@ import {
 import { watch } from "chokidar";
 import fastify, { type FastifyInstance } from "fastify";
 import { BUNDLE_EXT, createBundle, extractBundle } from "../bundle.ts";
+import { SceneHistory } from "./history.ts";
 import { importImage } from "./imports.ts";
 
 /** Built web client, served when present (repo: packages/web/dist). */
@@ -104,6 +105,7 @@ export function createApp(scenePath: string): FastifyInstance {
   const scene = path.resolve(scenePath);
   const app = fastify({ bodyLimit: BODY_LIMIT });
   const sockets = new Set<WsSocket>();
+  const history = new SceneHistory(scene);
 
   // Uploads arrive as raw bytes (application/octet-stream), not multipart.
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_req, body, done) =>
@@ -143,7 +145,9 @@ export function createApp(scenePath: string): FastifyInstance {
       /(?:^|\/)(?:node_modules|\.git|\.venv|dist)(?:\/|$)/.test(watchedPath),
   });
   let pending: NodeJS.Timeout | undefined;
-  watcher.on("all", () => {
+  watcher.on("all", (_event: string, changedPath: string) => {
+    // Scene changes from any writer (CLI, agent, editor) become undo steps.
+    if (path.resolve(changedPath) === scene) history.sync();
     clearTimeout(pending);
     pending = setTimeout(() => {
       const message = JSON.stringify({ type: "reload" });
@@ -260,6 +264,7 @@ export function createApp(scenePath: string): FastifyInstance {
       applyScale(layer, scaleFactor, naturalSize);
     }
     saveScene(doc);
+    history.sync();
     return { ok: true };
   });
 
@@ -279,6 +284,7 @@ export function createApp(scenePath: string): FastifyInstance {
         return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
       }
       saveScene(doc);
+      history.sync();
       return { ok: true, index: moved };
     },
   );
@@ -292,15 +298,41 @@ export function createApp(scenePath: string): FastifyInstance {
       return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
     }
     saveScene(doc);
+    history.sync();
     return { ok: true };
+  });
+
+  // ---- undo / redo -------------------------------------------------------------------
+
+  app.get("/api/history", async () => history.depths());
+
+  app.post("/api/undo", async (_req, reply) => {
+    const depths = history.undo();
+    if (!depths) return reply.code(409).send({ error: "nothing to undo" });
+    return { ok: true, ...depths };
+  });
+
+  app.post("/api/redo", async (_req, reply) => {
+    const depths = history.redo();
+    if (!depths) return reply.code(409).send({ error: "nothing to redo" });
+    return { ok: true, ...depths };
   });
 
   // ---- export / import ---------------------------------------------------------------
 
   const downloadName = (ext: string) => `${path.parse(scene).name}${ext}`;
 
-  /** Full-resolution render as a browser download (png/jpg/webp). */
-  app.get<{ Querystring: { format?: string; quality?: string } }>(
+  /** Positive pixel dimension from a query param, clamped; undefined if absent/invalid. */
+  const sizeParam = (value: string | undefined): number | undefined => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.min(10000, Math.round(n)) : undefined;
+  };
+
+  /**
+   * Render as a browser download (png/jpg/webp). Optional width/height scale
+   * the output; one alone preserves aspect, both together may stretch.
+   */
+  app.get<{ Querystring: { format?: string; quality?: string; width?: string; height?: string } }>(
     "/api/export",
     async (req, reply) => {
       const spec = EXPORT_FORMATS[req.query.format ?? "png"];
@@ -310,7 +342,10 @@ export function createApp(scenePath: string): FastifyInstance {
         });
       }
       const doc = loadScene(scene);
-      const img = await renderScene(doc);
+      const img = await renderScene(doc, {
+        width: sizeParam(req.query.width),
+        height: sizeParam(req.query.height),
+      });
       const bytes = await encodeRaster(img, spec.format, toNumber(req.query.quality, 90));
       return reply
         .header("Content-Disposition", `attachment; filename="${downloadName(`.${spec.format}`)}"`)
@@ -345,6 +380,7 @@ export function createApp(scenePath: string): FastifyInstance {
     if (name.toLowerCase().endsWith(BUNDLE_EXT)) {
       try {
         const loaded = extractBundle(req.body, scene);
+        history.sync();
         return { ok: true, kind: "bundle", layers: loaded.layers.length };
       } catch (err) {
         return reply.code(400).send({ error: `bundle import failed: ${errorMessage(err)}` });
@@ -353,6 +389,7 @@ export function createApp(scenePath: string): FastifyInstance {
 
     try {
       const imported = await importImage(scene, name, req.body);
+      history.sync();
       return { ok: true, kind: "image", ...imported };
     } catch (err) {
       return reply.code(400).send({ error: `not an importable image: ${errorMessage(err)}` });
