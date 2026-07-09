@@ -1,4 +1,4 @@
-/** Per-layer operations: transform, rotate, fit, move, opacity, blend, visible, delete, remove-bg, mask. */
+/** Per-layer operations: transform, rotate, fit, move, opacity, blend, blur, shadow, adjust, visible, delete, remove-bg, mask. */
 
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -8,6 +8,7 @@ import {
   findLayer,
   imageSize,
   layerIndex,
+  parseColor,
   removeBackground,
   resolveFit,
   rotatePoint,
@@ -190,6 +191,144 @@ export function blurAction(layerId: string, sigma: number, opts: { scene: string
   return saved(doc, `${layerId}: blur=${sigma === 0 ? "off" : g(sigma)}`);
 }
 
+// Starter drop shadow when a layer has none yet — soft, cast down-right.
+const SHADOW_DEFAULTS = { color: "#00000080", dx: 12, dy: 16, blur: 16 } as const;
+
+export function shadowAction(
+  layerId: string,
+  opts: {
+    color?: string;
+    dx?: number;
+    dy?: number;
+    blur?: number;
+    none?: boolean;
+    scene: string;
+  },
+): string {
+  const doc = loadOrFail(opts.scene);
+  const layer = findLayer(doc.scene, layerId);
+  if (opts.none) {
+    layer.shadow = undefined;
+    return saved(doc, `${layerId}: shadow off`);
+  }
+  // Merge onto any existing shadow so tweaks don't reset the other fields;
+  // fall back to the starter defaults when adding a shadow from scratch.
+  const base = layer.shadow ?? SHADOW_DEFAULTS;
+  const shadow = {
+    color: opts.color ?? base.color,
+    dx: opts.dx ?? base.dx,
+    dy: opts.dy ?? base.dy,
+    blur: opts.blur ?? base.blur,
+  };
+  if (shadow.blur < 0) throw new CliError("shadow blur must be >= 0");
+  try {
+    parseColor(shadow.color);
+  } catch (err) {
+    throw new CliError((err as Error).message);
+  }
+  layer.shadow = shadow;
+  return saved(
+    doc,
+    `${layerId}: shadow color=${shadow.color} dx=${g(shadow.dx)} dy=${g(shadow.dy)} blur=${g(shadow.blur)}`,
+  );
+}
+
+export function adjustAction(
+  layerId: string,
+  opts: {
+    brightness?: number;
+    contrast?: number;
+    saturation?: number;
+    exposure?: number;
+    warmth?: number;
+    hue?: number;
+    shadows?: number;
+    highlights?: number;
+    clarity?: number;
+    sharpen?: number;
+    reset?: boolean;
+    enable?: boolean;
+    disable?: boolean;
+    scene: string;
+  },
+): string {
+  const doc = loadOrFail(opts.scene);
+  const layer = findLayer(doc.scene, layerId);
+
+  if (opts.reset) {
+    layer.adjust = undefined;
+    return saved(doc, `${layerId}: adjustments cleared`);
+  }
+
+  // Toggle the bypass flag.  --disable keeps the values but skips them at
+  // render time; --enable restores rendering.
+  if (opts.disable) {
+    layer.adjustEnabled = false;
+  } else if (opts.enable) {
+    layer.adjustEnabled = true;
+  }
+
+  const adjust = layer.adjust ?? {
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+    exposure: 0,
+    warmth: 0,
+    hue: 0,
+    shadows: 0,
+    highlights: 0,
+    clarity: 0,
+    sharpen: 0,
+  };
+
+  if (opts.brightness !== undefined) adjust.brightness = opts.brightness;
+  if (opts.contrast !== undefined) adjust.contrast = opts.contrast;
+  if (opts.saturation !== undefined) adjust.saturation = opts.saturation;
+  if (opts.exposure !== undefined) adjust.exposure = opts.exposure;
+  if (opts.warmth !== undefined) adjust.warmth = opts.warmth;
+  if (opts.hue !== undefined) adjust.hue = opts.hue;
+  if (opts.shadows !== undefined) adjust.shadows = opts.shadows;
+  if (opts.highlights !== undefined) adjust.highlights = opts.highlights;
+  if (opts.clarity !== undefined) adjust.clarity = opts.clarity;
+  if (opts.sharpen !== undefined) adjust.sharpen = opts.sharpen;
+
+  // Remove the adjust object entirely if all values are neutral
+  if (
+    adjust.brightness === 0 &&
+    adjust.contrast === 0 &&
+    adjust.saturation === 0 &&
+    adjust.exposure === 0 &&
+    adjust.warmth === 0 &&
+    adjust.hue === 0 &&
+    adjust.shadows === 0 &&
+    adjust.highlights === 0 &&
+    adjust.clarity === 0 &&
+    adjust.sharpen === 0
+  ) {
+    layer.adjust = undefined;
+    // Still persist the toggle if it was explicitly set.
+    if (opts.enable || opts.disable) {
+      return saved(doc, `${layerId}: adjust (no values, ${layer.adjustEnabled ? "on" : "off"})`);
+    }
+    return saved(doc, `${layerId}: adjustments cleared (all neutral)`);
+  }
+
+  layer.adjust = adjust;
+  const parts: string[] = [];
+  if (adjust.brightness !== 0) parts.push(`brightness=${g(adjust.brightness)}`);
+  if (adjust.contrast !== 0) parts.push(`contrast=${g(adjust.contrast)}`);
+  if (adjust.saturation !== 0) parts.push(`saturation=${g(adjust.saturation)}`);
+  if (adjust.exposure !== 0) parts.push(`exposure=${g(adjust.exposure)}`);
+  if (adjust.warmth !== 0) parts.push(`warmth=${g(adjust.warmth)}`);
+  if (adjust.hue !== 0) parts.push(`hue=${g(adjust.hue)}`);
+  if (adjust.shadows !== 0) parts.push(`shadows=${g(adjust.shadows)}`);
+  if (adjust.highlights !== 0) parts.push(`highlights=${g(adjust.highlights)}`);
+  if (adjust.clarity !== 0) parts.push(`clarity=${g(adjust.clarity)}`);
+  if (adjust.sharpen !== 0) parts.push(`sharpen=${g(adjust.sharpen)}`);
+  const suffix = layer.adjustEnabled === false ? " [off]" : "";
+  return saved(doc, `${layerId}: adjust ${parts.join(" ")}${suffix}`);
+}
+
 export function blendAction(layerId: string, mode: string, opts: { scene: string }): string {
   if (!(mode in BLEND_MODES)) {
     throw new CliError(
@@ -343,6 +482,37 @@ export function registerLayerCommands(program: Command): void {
       .argument("<sigma>", "Blur sigma in canvas pixels (0 = off).", parseNum),
   ).action((id, sigma, opts) => console.log(blurAction(id, sigma, opts)));
 
+  sceneOption(
+    layer
+      .command("shadow")
+      .description("Drop shadow behind a layer (derived from its silhouette).")
+      .argument("<id>")
+      .option("--color <hex>", "Shadow color #rrggbbaa (alpha = strength).")
+      .option("--dx <n>", "Horizontal offset in canvas pixels.", parseNum)
+      .option("--dy <n>", "Vertical offset in canvas pixels (down positive).", parseNum)
+      .option("--blur <n>", "Shadow blur sigma in canvas pixels.", parseNum)
+      .option("--none", "Remove the drop shadow."),
+  ).action((id, opts) => console.log(shadowAction(id, opts)));
+
+  sceneOption(
+    layer
+      .command("adjust")
+      .description("Per-layer tone/color adjustments (brightness, contrast, etc.).")
+      .argument("<id>")
+      .option("--brightness <n>", "-100..100 (additive offset).", parseNum)
+      .option("--contrast <n>", "-100..100 (multiplier around midpoint).", parseNum)
+      .option("--saturation <n>", "-100..100 (-100 = grayscale).", parseNum)
+      .option("--exposure <n>", "-100..100 (multiplicative).", parseNum)
+      .option("--warmth <n>", "-100..100 (warm/cool color shift).", parseNum)
+      .option("--hue <n>", "-180..180 (hue rotation degrees).", parseNum)
+      .option("--shadows <n>", "-100..100 (lift/darken shadow regions).", parseNum)
+      .option("--highlights <n>", "-100..100 (recover/darken highlight regions).", parseNum)
+      .option("--clarity <n>", "0..100 (CLAHE local contrast).", parseNum)
+      .option("--sharpen <n>", "0..100 (unsharp mask edge contrast).", parseNum)
+      .option("--reset", "Clear all adjustments on the layer.")
+      .option("--enable", "Re-enable adjustments (render them).")
+      .option("--disable", "Bypass adjustments at render time (values kept)."),
+  ).action((id, opts) => console.log(adjustAction(id, opts)));
   sceneOption(
     layer
       .command("visible")

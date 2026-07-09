@@ -7,7 +7,7 @@ import type { Command } from "commander";
 import { portFree } from "../server/run.ts";
 import { cliVersion, DEFAULT_SCENE } from "../shared.ts";
 
-const REQUIRED_NODE = [20, 19];
+const REQUIRED_NODE: readonly [number, number] = [20, 19];
 const MODEL_PATH = path.join(homedir(), ".u2net", "u2net.onnx");
 
 type Status = "ok" | "warn" | "fail";
@@ -73,7 +73,9 @@ export async function doctorAction(): Promise<{ report: string; healthy: boolean
   push(
     webDist ? "ok" : "warn",
     "web editor",
-    webDist ? `assets at ${webDist}` : "not built — `gimpish serve` will have no UI (repo: npm run build)",
+    webDist
+      ? `assets at ${webDist}`
+      : "not built — `gimpish serve` will have no UI (repo: npm run build)",
   );
 
   try {

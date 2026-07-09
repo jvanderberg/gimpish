@@ -89,6 +89,29 @@ const TextSpecSchema = z.object({
   rotation: z.number().default(0),
 });
 
+const AdjustSchema = z.object({
+  brightness: z.number().min(-100).max(100).default(0),
+  contrast: z.number().min(-100).max(100).default(0),
+  saturation: z.number().min(-100).max(100).default(0),
+  exposure: z.number().min(-100).max(100).default(0),
+  warmth: z.number().min(-100).max(100).default(0),
+  hue: z.number().min(-180).max(180).default(0),
+  shadows: z.number().min(-100).max(100).default(0),
+  highlights: z.number().min(-100).max(100).default(0),
+  clarity: z.number().min(0).max(100).default(0),
+  sharpen: z.number().min(0).max(100).default(0),
+});
+
+// Drop shadow cast behind any layer, derived from the layer's own alpha
+// silhouette. dx/dy offset in canvas pixels (y grows downward), blur is a
+// gaussian sigma; the color's alpha channel sets shadow strength.
+const ShadowSchema = z.object({
+  color: z.string().default("#00000080"),
+  dx: z.number().default(0),
+  dy: z.number().default(0),
+  blur: z.number().nonnegative().default(0),
+});
+
 const LayerBase = {
   id: z.string(),
   name: z.string().default(""),
@@ -96,6 +119,9 @@ const LayerBase = {
   blend: z.string().default("normal"),
   visible: z.boolean().default(true),
   blur: z.number().nonnegative().optional(), // gaussian sigma in canvas pixels
+  shadow: ShadowSchema.optional(), // drop shadow behind the layer silhouette
+  adjust: AdjustSchema.optional(),
+  adjustEnabled: z.boolean().default(true), // false = bypass adjust at render time, keep values
 };
 
 const ImageLayerSchema = z.object({
@@ -156,14 +182,38 @@ export const CanvasSchema = z.object({
   background: z.string().default("transparent"), // "transparent" or "#rrggbbaa"
 });
 
+// Source region of the canvas to extract at export time, in canvas pixels.
+const ExportCropSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+});
+
+// Saved export target: exact output pixels + optional framing crop. Persisted in
+// the scene so a reload (or a headless CLI `export`) reproduces the same file.
+// crop is a source region in canvas px whose aspect should match width:height;
+// when absent the renderer derives a centered "cover" crop for that aspect.
+const ExportSettingsSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  format: z.enum(["png", "jpg", "webp"]).default("png"),
+  quality: z.number().int().min(1).max(100).default(90),
+  crop: ExportCropSchema.nullish(),
+  preset: z.string().nullish(), // cosmetic label for the editor UI
+});
+
 export const SceneSchema = z.object({
   version: z.number().default(SCENE_VERSION),
   canvas: CanvasSchema,
   layers: z.array(LayerSchema).default([]),
+  export: ExportSettingsSchema.optional(),
 });
 
 export type Transform = z.infer<typeof TransformSchema>;
 export type Mask = z.infer<typeof MaskSchema>;
+export type Adjust = z.infer<typeof AdjustSchema>;
+export type Shadow = z.infer<typeof ShadowSchema>;
 export type GradientSpec = z.infer<typeof GradientSpecSchema>;
 export type ArrowSpec = z.infer<typeof ArrowSpecSchema>;
 export type TextSpec = z.infer<typeof TextSpecSchema>;
@@ -174,6 +224,8 @@ export type ArrowLayer = z.infer<typeof ArrowLayerSchema>;
 export type TextLayer = z.infer<typeof TextLayerSchema>;
 export type Layer = z.infer<typeof LayerSchema>;
 export type Canvas = z.infer<typeof CanvasSchema>;
+export type ExportCrop = z.infer<typeof ExportCropSchema>;
+export type ExportSettings = z.infer<typeof ExportSettingsSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 
 export function parseScene(data: unknown): Scene {

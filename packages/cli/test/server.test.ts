@@ -406,6 +406,43 @@ describe("POST /api/layer/:id/order", () => {
   });
 });
 
+describe("POST /api/layer/:id/visible", () => {
+  it("hides and re-shows a layer and persists", async () => {
+    const hide = await app.inject({
+      method: "POST",
+      url: "/api/layer/photo/visible",
+      payload: { visible: false },
+    });
+    expect(hide.statusCode).toBe(200);
+    expect(hide.json()).toEqual({ ok: true });
+    expect(readSceneFromDisk().layers.find((l) => l.id === "photo")?.visible).toBe(false);
+
+    const show = await app.inject({
+      method: "POST",
+      url: "/api/layer/photo/visible",
+      payload: { visible: true },
+    });
+    expect(show.statusCode).toBe(200);
+    expect(readSceneFromDisk().layers.find((l) => l.id === "photo")?.visible).toBe(true);
+  });
+
+  it("400s without a boolean and 404s for unknown layers", async () => {
+    const bad = await app.inject({
+      method: "POST",
+      url: "/api/layer/photo/visible",
+      payload: {},
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/layer/nope/visible",
+      payload: { visible: false },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+});
+
 describe("DELETE /api/layer/:id", () => {
   it("removes the layer and persists", async () => {
     const res = await app.inject({ method: "DELETE", url: "/api/layer/photo" });

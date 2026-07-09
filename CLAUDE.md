@@ -29,6 +29,7 @@ npx gimpish layer fit subject --mode fit --percent 70 --anchor right
 npx gimpish draw alpha-gradient --color "#000000" --from 0.8 --to 0 --kind radial --anchor bottom-left
 npx gimpish draw text "Headline" --x 800 --y 640 --size 140 --weight 900 \
     --align center --fill "#e61e2dff" --stroke "#ffffffff" --stroke-width 8
+npx gimpish layer adjust subject --contrast 20 --shadows 15 --clarity 30  # tone/color per layer
 npx gimpish preview --out preview.png             # downscaled; view this to verify
 npx gimpish export --out final.png                # full res, end of session only
 ```

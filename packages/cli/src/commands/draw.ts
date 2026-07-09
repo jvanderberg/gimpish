@@ -47,6 +47,7 @@ function addShape(shape: "rect" | "ellipse", opts: ShapeOpts): string {
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     shape,
     rect: { x: opts.x, y: opts.y, w: opts.w, h: opts.h },
     fill: opts.fill ?? null,
@@ -91,6 +92,7 @@ export function arrowAction(opts: {
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     arrow: {
       from_x: opts.fromX,
       from_y: opts.fromY,
@@ -197,6 +199,7 @@ export function textAction(
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     text,
   };
   insertLayer(doc, layer, opts.over);
@@ -231,6 +234,7 @@ function addGradient(opts: {
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     gradient,
   };
   insertLayer(doc, layer, opts.over);

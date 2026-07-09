@@ -1,7 +1,8 @@
 import type { DragEvent as ReactDragEvent } from "react";
 import { useCallback, useState } from "react";
 import type { Layer, Scene } from "../api";
-import { layerSubtitle, shapeIcon } from "../lib/layerDisplay";
+import { adjustSubtitle, layerSubtitle, shapeIcon } from "../lib/layerDisplay";
+import { ICON_EYE, ICON_EYE_OFF } from "./icons";
 import { Readout } from "./Readout";
 
 interface LayerRowProps {
@@ -12,6 +13,8 @@ interface LayerRowProps {
   dropBelow: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onToggleAdjust: (id: string, enabled: boolean) => void;
+  onToggleVisible: (id: string, visible: boolean) => void;
   onDragStart: (id: string) => void;
   onDragEnd: () => void;
   onDragOverRow: (e: ReactDragEvent<HTMLElement>) => void;
@@ -26,6 +29,8 @@ function LayerRow({
   dropBelow,
   onSelect,
   onDelete,
+  onToggleAdjust,
+  onToggleVisible,
   onDragStart,
   onDragEnd,
   onDragOverRow,
@@ -41,6 +46,13 @@ function LayerRow({
   ]
     .filter(Boolean)
     .join(" ");
+
+  const hasAdjust = !!layer.adjust && adjustSubtitle(layer) !== "";
+  const adjustOff = hasAdjust && layer.adjustEnabled === false;
+  const adjSummary = hasAdjust ? adjustSubtitle(layer) : "";
+  const adjTooltip = hasAdjust
+    ? `${adjSummary} (${adjustOff ? "off — click to enable" : "on — click to bypass"})`
+    : "";
 
   return (
     <div className={classes}>
@@ -76,6 +88,26 @@ function LayerRow({
       </button>
       <button
         type="button"
+        className={`vis-toggle ${layer.visible ? "on" : "off"}`}
+        title={layer.visible ? "Hide layer" : "Show layer"}
+        aria-label={layer.visible ? `Hide layer '${layer.id}'` : `Show layer '${layer.id}'`}
+        aria-pressed={!layer.visible}
+        onClick={() => onToggleVisible(layer.id, !layer.visible)}
+      >
+        {layer.visible ? ICON_EYE : ICON_EYE_OFF}
+      </button>
+      {hasAdjust ? (
+        <button
+          type="button"
+          className={`adj-toggle ${adjustOff ? "off" : "on"}`}
+          title={adjTooltip}
+          onClick={() => onToggleAdjust(layer.id, adjustOff)}
+        >
+          {adjustOff ? "◐" : "◑"}
+        </button>
+      ) : null}
+      <button
+        type="button"
         className="del"
         title={`Delete layer '${layer.id}'`}
         onClick={() => onDelete(layer.id)}
@@ -92,6 +124,8 @@ interface LayerPanelProps {
   sel: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onToggleAdjust: (id: string, enabled: boolean) => void;
+  onToggleVisible: (id: string, visible: boolean) => void;
   /** `index` uses `layer move --to` semantics: paint-order slot after removal, 0 = back. */
   onReorder: (id: string, index: number) => void;
   err: string | null;
@@ -105,6 +139,8 @@ export function LayerPanel({
   sel,
   onSelect,
   onDelete,
+  onToggleAdjust,
+  onToggleVisible,
   onReorder,
   err,
   selLayer,
@@ -177,6 +213,8 @@ export function LayerPanel({
             dropBelow={p === n - 1 && gap === n}
             onSelect={onSelect}
             onDelete={onDelete}
+            onToggleAdjust={onToggleAdjust}
+            onToggleVisible={onToggleVisible}
             onDragStart={setDragId}
             onDragEnd={clearDrag}
             onDragOverRow={dragOverRow(p)}

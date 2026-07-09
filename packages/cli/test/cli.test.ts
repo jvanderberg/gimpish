@@ -15,6 +15,7 @@ import {
   textAction,
 } from "../src/commands/draw.ts";
 import {
+  adjustAction,
   blendAction,
   deleteAction,
   fitAction,
@@ -544,6 +545,81 @@ describe("layer ops", () => {
     );
   });
 
+  it("adjust sets and accumulates per-layer adjustments", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    adjustAction("a", { contrast: 20, brightness: -10, scene });
+    let layer = readScene(scene).layers[0];
+    if (!layer?.adjust) throw new Error("expected adjust");
+    expect(layer.adjust.contrast).toBe(20);
+    expect(layer.adjust.brightness).toBe(-10);
+    expect(layer.adjust.saturation).toBe(0);
+
+    // A second call accumulates onto the existing values, leaving untouched
+    // fields alone.
+    adjustAction("a", { saturation: -15, warmth: 8, scene });
+    layer = readScene(scene).layers[0];
+    if (!layer?.adjust) throw new Error("expected adjust");
+    expect(layer.adjust.contrast).toBe(20); // preserved
+    expect(layer.adjust.brightness).toBe(-10); // preserved
+    expect(layer.adjust.saturation).toBe(-15);
+    expect(layer.adjust.warmth).toBe(8);
+  });
+
+  it("adjust --reset clears all adjustments", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    adjustAction("a", { contrast: 20, brightness: -10, scene });
+    const msg = adjustAction("a", { reset: true, scene });
+    expect(msg).toBe(`a: adjustments cleared → ${scene}`);
+    const layer = readScene(scene).layers[0];
+    expect(layer?.adjust).toBeUndefined();
+  });
+
+  it("adjust --disable bypasses adjustments at render time (values kept)", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    adjustAction("a", { contrast: 20, brightness: -10, scene });
+    const msg = adjustAction("a", { disable: true, scene });
+    expect(msg).toContain("[off]");
+    const layer = readScene(scene).layers[0];
+    // Values are kept
+    expect(layer?.adjust?.contrast).toBe(20);
+    expect(layer?.adjust?.brightness).toBe(-10);
+    // But the toggle is off
+    expect(layer?.adjustEnabled).toBe(false);
+  });
+
+  it("adjust --enable restores adjustment rendering", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    adjustAction("a", { contrast: 20, scene });
+    adjustAction("a", { disable: true, scene });
+    expect(readScene(scene).layers[0]?.adjustEnabled).toBe(false);
+    adjustAction("a", { enable: true, scene });
+    expect(readScene(scene).layers[0]?.adjustEnabled).toBe(true);
+  });
+
+  it("adjust strips the adjust key when all values return to neutral", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    adjustAction("a", { contrast: 20, brightness: -10, scene });
+    expect(readScene(scene).layers[0]?.adjust).toBeDefined();
+    // Set both back to 0 -> auto-strips
+    const msg = adjustAction("a", { contrast: 0, brightness: 0, scene });
+    expect(msg).toBe(`a: adjustments cleared (all neutral) → ${scene}`);
+    expect(readScene(scene).layers[0]?.adjust).toBeUndefined();
+  });
+
+  it("adjust without any options throws (no --reset, no fields)", () => {
+    const scene = newScene();
+    rectAction({ x: 0, y: 0, w: 10, h: 10, strokeWidth: 0, scene, name: "a" });
+    // No fields and no reset: all values are 0 -> auto-strips, but the layer
+    // never had an adjust to begin with.  This still succeeds (clears nothing).
+    const msg = adjustAction("a", { scene });
+    expect(msg).toContain("adjustments cleared");
+  });
+
   it("mask sets shape and image masks on image layers", async () => {
     const scene = newScene();
     const dir = path.dirname(scene);
@@ -623,6 +699,50 @@ describe("output", () => {
     expect(meta.format).toBe("jpeg");
     expect(meta.hasAlpha).toBe(false);
     expect([meta.width, meta.height]).toEqual([80, 60]);
+  });
+
+  it("export --preset writes the exact size and --save persists the settings", async () => {
+    const scene = shapeScene();
+    const out = path.join(path.dirname(scene), "yt.png");
+    const msg = await exportAction({ out, preset: "youtube", save: true, scene });
+    expect(msg).toContain("1280x720");
+    expect(msg).toContain("saved export settings");
+    const meta = await sharp(out).metadata();
+    expect([meta.width, meta.height]).toEqual([1280, 720]);
+
+    const persisted = readScene(scene).export;
+    expect(persisted?.width).toBe(1280);
+    expect(persisted?.height).toBe(720);
+    expect(persisted?.preset).toBe("youtube");
+  });
+
+  it("export with no size flags reuses the saved settings", async () => {
+    const scene = shapeScene();
+    await exportAction({
+      out: path.join(path.dirname(scene), "a.png"),
+      preset: "square",
+      save: true,
+      scene,
+    });
+    const out = path.join(path.dirname(scene), "b.png");
+    const msg = await exportAction({ out, scene });
+    expect(msg).toContain("1080x1080");
+    const meta = await sharp(out).metadata();
+    expect([meta.width, meta.height]).toEqual([1080, 1080]);
+  });
+
+  it("export --crop extracts the given region at the target size", async () => {
+    const scene = shapeScene();
+    const out = path.join(path.dirname(scene), "crop.png");
+    const msg = await exportAction({ out, width: 40, height: 40, crop: "0,0,60,60", scene });
+    expect(msg).toContain("crop 0,0 60x60");
+    const meta = await sharp(out).metadata();
+    expect([meta.width, meta.height]).toEqual([40, 40]);
+  });
+
+  it("export rejects an unknown preset", async () => {
+    const scene = shapeScene();
+    await expect(exportAction({ preset: "tiktokk", scene })).rejects.toThrow(/unknown --preset/);
   });
 
   it("renders a golden fixture scene at canvas size", async () => {

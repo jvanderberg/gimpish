@@ -10,9 +10,12 @@
 import { statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
+import { parseColor } from "../color.ts";
 import type { SceneDoc } from "../doc.ts";
 import { sceneRoot } from "../doc.ts";
-import type { Layer, Mask, ShapeLayer } from "../schema.ts";
+import { resolveExportCrop } from "../export.ts";
+import type { ExportSettings, Layer, Mask, Shadow, ShapeLayer } from "../schema.ts";
+import { applyAdjustments, isAdjustNeutral } from "./adjust.ts";
 import {
   alphaBounds,
   applyMaskBand,
@@ -250,8 +253,57 @@ async function blurPlaced(placed: Placed, sigma: number): Promise<Placed> {
   return { img: blurred, x: placed.x - pad, y: placed.y - pad };
 }
 
+/**
+ * Build a drop shadow for an already-placed layer raster: recolor the layer's
+ * alpha silhouette to the shadow color, blur it, and offset by (dx, dy). Reads
+ * `placed.img` without mutating it, so the caller can still composite the layer
+ * content on top. Returns null when the layer has no visible pixels.
+ */
+async function shadowPlaced(placed: Placed, shadow: Shadow): Promise<Placed | null> {
+  const { data, width, height } = placed.img;
+  const [r, g, b, a] = parseColor(shadow.color);
+  if (a === 0) return null;
+
+  // Silhouette alpha = source alpha scaled by the shadow color's own alpha.
+  const band = Buffer.allocUnsafe(width * height);
+  let hasPixels = false;
+  for (let p = 0, q = 0; q < band.length; p += 4, q += 1) {
+    const av = ((data[p + 3] as number) * a) / 255;
+    if (av > 0) hasPixels = true;
+    band[q] = av;
+  }
+  if (!hasPixels) return null;
+
+  let pipeline = sharp({
+    create: { width, height, channels: 3, background: { r, g, b } },
+  }).joinChannel(band, { raw: { width, height, channels: 1 } });
+
+  let x = placed.x + shadow.dx;
+  let y = placed.y + shadow.dy;
+  if (shadow.blur > 0) {
+    const sigma = Math.max(0.3, shadow.blur);
+    const pad = Math.ceil(sigma * 3);
+    pipeline = pipeline
+      .extend({
+        top: pad,
+        bottom: pad,
+        left: pad,
+        right: pad,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .blur(sigma);
+    x -= pad;
+    y -= pad;
+  }
+  return { img: await toRaster(pipeline), x, y };
+}
+
 async function renderLayer(doc: SceneDoc, layer: Layer): Promise<Placed> {
-  const placed = await renderLayerContent(doc, layer);
+  let placed = await renderLayerContent(doc, layer);
+  const adjust = layer.adjustEnabled !== false ? layer.adjust : undefined;
+  if (adjust && !isAdjustNeutral(adjust)) {
+    placed = { ...placed, img: await applyAdjustments(placed.img, adjust) };
+  }
   return layer.blur && layer.blur > 0 ? blurPlaced(placed, layer.blur) : placed;
 }
 
@@ -280,21 +332,33 @@ export async function renderScene(doc: SceneDoc, opts: RenderOptions = {}): Prom
       ? transparent(W, H)
       : solid(W, H, background);
 
+  const visibleLayers = doc.scene.layers.filter((l) => l.visible && !opts.hide?.has(l.id));
+  const rendered = await Promise.all(visibleLayers.map((l) => renderLayer(doc, l)));
+
   const overlays: sharp.OverlayOptions[] = [];
-  for (const layer of doc.scene.layers) {
-    if (!layer.visible || opts.hide?.has(layer.id)) continue;
-    const { img, x, y } = await renderLayer(doc, layer);
-    applyOpacity(img, layer.opacity);
-    const placed = embed(img, x, y, W, H);
-    if (!placed) continue;
-    const blend = BLEND_MODES[layer.blend] ?? "over";
+  const pushOverlay = (raster: Raster, x: number, y: number, blend: string): void => {
+    const placed = embed(raster, x, y, W, H);
+    if (!placed) return;
     overlays.push({
       input: placed.data,
       raw: { width: W, height: H, channels: 4 },
-      blend: blend as sharp.Blend,
+      blend: (BLEND_MODES[blend] ?? "over") as sharp.Blend,
       top: 0,
       left: 0,
     });
+  };
+
+  for (const [i, layer] of visibleLayers.entries()) {
+    const content = rendered[i] as Placed;
+    // Shadow reads content alpha before applyOpacity mutates it; it sits
+    // directly behind this layer with normal (over) compositing.
+    if (layer.shadow) {
+      const shadow = await shadowPlaced(content, layer.shadow);
+      if (shadow) pushOverlay(shadow.img, shadow.x, shadow.y, "normal");
+    }
+    const { img, x, y } = content;
+    applyOpacity(img, layer.opacity);
+    pushOverlay(img, x, y, layer.blend);
   }
 
   let out = fromRaster(base);
@@ -395,5 +459,31 @@ export async function renderToFile(
   const img = await renderScene(doc, opts);
   const format = formatForExt(path.extname(out).toLowerCase());
   writeFileSync(out, await encodeRaster(img, format, opts.quality ?? 90));
+  return out;
+}
+
+/**
+ * Render the scene to the saved export target: composite the full canvas,
+ * extract the (resolved, canvas-clamped) crop, and resize to the exact output
+ * pixels. Used by the editor download and the headless CLI `export`. Crop
+ * aspect is expected to match width:height, so the resize is uniform.
+ */
+export async function renderExport(doc: SceneDoc, settings: ExportSettings): Promise<Buffer> {
+  const crop = resolveExportCrop(doc.scene.canvas, settings);
+  const full = await renderScene(doc);
+  const cropped = await toRaster(
+    fromRaster(full)
+      .extract({ left: crop.x, top: crop.y, width: crop.w, height: crop.h })
+      .resize(settings.width, settings.height, { fit: "fill" }),
+  );
+  return encodeRaster(cropped, settings.format, settings.quality);
+}
+
+export async function renderExportToFile(
+  doc: SceneDoc,
+  out: string,
+  settings: ExportSettings,
+): Promise<string> {
+  writeFileSync(out, await renderExport(doc, settings));
   return out;
 }

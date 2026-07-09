@@ -7,9 +7,12 @@ import {
   postTransform,
   previewUrl,
   reorderLayer,
+  setLayerVisible,
   spriteUrl,
   type TransformDelta,
+  toggleAdjust,
 } from "./api";
+import { ExportModal } from "./components/ExportModal";
 import { LayerPanel } from "./components/LayerPanel";
 import { Stage, type Toast } from "./components/Stage";
 import { useDrag } from "./hooks/useDrag";
@@ -29,17 +32,44 @@ const ARROW_DELTAS: Record<string, [number, number]> = {
   ArrowDown: [0, 1],
 };
 
+// Discrete zoom levels as a factor over the fit-to-window size. 1 (= "1:1") is
+// the default fit view; below it the canvas shrinks (margin around it, so
+// off-canvas handles come into reach), above it it enlarges for detail work.
+const ZOOM_STEPS = [0.25, 0.5, 1, 2, 4];
+const ZOOM_LABELS: Record<number, string> = {
+  0.25: "1:4",
+  0.5: "1:2",
+  1: "1:1",
+  2: "2:1",
+  4: "4:1",
+};
+
 export function App() {
   const { scene, geometry, history, err, setErr, ts, live, refresh } = useLiveScene();
   const [sel, setSel] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const { ref: wrapRef, size: avail } = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const canvas = scene?.canvas;
   const cw = canvas?.width ?? 1;
   const ch = canvas?.height ?? 1;
-  const frame = containBox(avail.w, avail.h, cw / ch);
+  const [zoom, setZoom] = useState(1);
+  const fit = containBox(avail.w, avail.h, cw / ch);
+  const frame = { w: fit.w * zoom, h: fit.h * zoom };
   const k = frame.w > 0 ? cw / frame.w : 1;
+
+  const stepZoom = useCallback((dir: number) => {
+    setZoom((z) => {
+      const i = ZOOM_STEPS.indexOf(z);
+      const from = i < 0 ? ZOOM_STEPS.indexOf(1) : i;
+      const j = Math.max(0, Math.min(ZOOM_STEPS.length - 1, from + dir));
+      return ZOOM_STEPS[j] ?? 1;
+    });
+  }, []);
+  const zoomLabel = ZOOM_LABELS[zoom] ?? "1:1";
+  const canZoomIn = zoom < (ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4);
+  const canZoomOut = zoom > (ZOOM_STEPS[0] ?? 0.25);
 
   const boxes = geometry.boxes;
   const rawSelBox = useMemo(() => boxes.find((b) => b.id === sel) ?? null, [boxes, sel]);
@@ -146,6 +176,24 @@ export function App() {
     [pushToast],
   );
 
+  const onToggleAdjust = useCallback(
+    (id: string, enabled: boolean) => {
+      toggleAdjust(id, enabled).catch((e: unknown) => {
+        pushToast(`adjust toggle '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+      });
+    },
+    [pushToast],
+  );
+
+  const onToggleVisible = useCallback(
+    (id: string, visible: boolean) => {
+      setLayerVisible(id, visible).catch((e: unknown) => {
+        pushToast(`visibility '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+      });
+    },
+    [pushToast],
+  );
+
   const onHistory = useCallback(
     (op: "undo" | "redo") => {
       // The write trips the watcher -> ws reload; scene + depths refresh themselves.
@@ -164,6 +212,23 @@ export function App() {
         if (key === "z" || key === "y") {
           e.preventDefault();
           onHistory(key === "y" || e.shiftKey ? "redo" : "undo");
+          return;
+        }
+        // Editor zoom (overrides the browser's page zoom on ⌘/Ctrl +/−/0).
+        if (e.key === "=" || e.key === "+") {
+          e.preventDefault();
+          stepZoom(1);
+          return;
+        }
+        if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          stepZoom(-1);
+          return;
+        }
+        if (e.key === "0") {
+          e.preventDefault();
+          setZoom(1);
+          return;
         }
         return;
       }
@@ -174,7 +239,7 @@ export function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sel, drag, onDelete, onHistory]);
+  }, [sel, drag, onDelete, onHistory, stepZoom]);
 
   const onDragEnter = useCallback((e: ReactDragEvent<HTMLDivElement>) => {
     if (!hasFiles(e)) return;
@@ -231,6 +296,13 @@ export function App() {
         dropActive={dropActive}
         toasts={toasts}
         history={history}
+        zoomLabel={zoomLabel}
+        canZoomIn={canZoomIn}
+        canZoomOut={canZoomOut}
+        onZoomIn={() => stepZoom(1)}
+        onZoomOut={() => stepZoom(-1)}
+        onZoomReset={() => setZoom(1)}
+        onExportOpen={() => setExportOpen(true)}
         onHistory={onHistory}
         onRefresh={() => void refresh()}
         onImportClick={() => fileInput.current?.click()}
@@ -248,10 +320,15 @@ export function App() {
         sel={sel}
         onSelect={(id) => setSel((s) => (s === id ? null : id))}
         onDelete={onDelete}
+        onToggleAdjust={onToggleAdjust}
+        onToggleVisible={onToggleVisible}
         onReorder={onReorder}
         err={err}
         selLayer={selLayer}
       />
+      {exportOpen && canvas ? (
+        <ExportModal canvas={canvas} scene={scene} ts={ts} onClose={() => setExportOpen(false)} />
+      ) : null}
     </div>
   );
 }

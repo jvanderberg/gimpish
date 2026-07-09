@@ -55,7 +55,11 @@ export async function findFreePort(start: number, tries = 20): Promise<number> {
   throw new CliError(`no free port in ${start}–${start + tries - 1}.`);
 }
 
-export async function runServer(scenePath: string, port = 8765, portExplicit = false): Promise<void> {
+export async function runServer(
+  scenePath: string,
+  port = 8765,
+  portExplicit = false,
+): Promise<void> {
   const resolved = path.resolve(scenePath);
   if (!existsSync(resolved)) {
     throw new CliError(

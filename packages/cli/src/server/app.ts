@@ -17,14 +17,17 @@ import {
   applyMove,
   applyRotate,
   applyScale,
+  type ExportSettings,
   encodeRaster,
   findLayer,
   imageSize,
   layerBox,
   loadScene,
   moveLayerTo,
+  parseScene,
   rasterToPng,
   removeLayer,
+  renderExport,
   renderLayerSprite,
   renderPreview,
   renderScene,
@@ -308,6 +311,50 @@ export function createApp(scenePath: string): FastifyInstance {
     return { ok: true };
   });
 
+  /** Toggle whether a layer's adjustments are applied at render time. */
+  app.post<{
+    Params: { id: string };
+    Body: { enabled?: unknown } | null;
+  }>("/api/layer/:id/adjust-enabled", async (req, reply) => {
+    const doc = loadScene(scene);
+    let layer: Layer;
+    try {
+      layer = findLayer(doc.scene, req.params.id);
+    } catch {
+      return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
+    }
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      return reply.code(400).send({ error: "body must be {enabled: <boolean>}" });
+    }
+    layer.adjustEnabled = enabled;
+    saveScene(doc);
+    history.sync();
+    return { ok: true };
+  });
+
+  /** Show or hide a layer at render time. */
+  app.post<{
+    Params: { id: string };
+    Body: { visible?: unknown } | null;
+  }>("/api/layer/:id/visible", async (req, reply) => {
+    const doc = loadScene(scene);
+    let layer: Layer;
+    try {
+      layer = findLayer(doc.scene, req.params.id);
+    } catch {
+      return reply.code(404).send({ error: `no layer ${JSON.stringify(req.params.id)}` });
+    }
+    const visible = req.body?.visible;
+    if (typeof visible !== "boolean") {
+      return reply.code(400).send({ error: "body must be {visible: <boolean>}" });
+    }
+    layer.visible = visible;
+    saveScene(doc);
+    history.sync();
+    return { ok: true };
+  });
+
   // ---- undo / redo -------------------------------------------------------------------
 
   app.get("/api/history", async () => history.depths());
@@ -335,30 +382,76 @@ export function createApp(scenePath: string): FastifyInstance {
   };
 
   /**
-   * Render as a browser download (png/jpg/webp). Optional width/height scale
-   * the output; one alone preserves aspect, both together may stretch.
+   * Render as a browser download (png/jpg/webp). With a crop (cropX/Y/W/H in
+   * canvas px) plus width+height, extracts that region and resizes to the exact
+   * output size — the export modal's path. Without a crop, width/height just
+   * scale the whole canvas (one alone preserves aspect, both may stretch).
    */
-  app.get<{ Querystring: { format?: string; quality?: string; width?: string; height?: string } }>(
-    "/api/export",
-    async (req, reply) => {
-      const spec = EXPORT_FORMATS[req.query.format ?? "png"];
-      if (!spec) {
-        return reply.code(400).send({
-          error: `unknown format ${JSON.stringify(req.query.format)}; use png, jpg, or webp`,
-        });
-      }
-      const doc = loadScene(scene);
-      const img = await renderScene(doc, {
-        width: sizeParam(req.query.width),
-        height: sizeParam(req.query.height),
+  app.get<{
+    Querystring: {
+      format?: string;
+      quality?: string;
+      width?: string;
+      height?: string;
+      cropX?: string;
+      cropY?: string;
+      cropW?: string;
+      cropH?: string;
+    };
+  }>("/api/export", async (req, reply) => {
+    const spec = EXPORT_FORMATS[req.query.format ?? "png"];
+    if (!spec) {
+      return reply.code(400).send({
+        error: `unknown format ${JSON.stringify(req.query.format)}; use png, jpg, or webp`,
       });
-      const bytes = await encodeRaster(img, spec.format, toNumber(req.query.quality, 90));
-      return reply
-        .header("Content-Disposition", `attachment; filename="${downloadName(`.${spec.format}`)}"`)
-        .type(spec.mime)
-        .send(bytes);
-    },
-  );
+    }
+    const doc = loadScene(scene);
+    const width = sizeParam(req.query.width);
+    const height = sizeParam(req.query.height);
+    const cropW = Number(req.query.cropW);
+    const cropH = Number(req.query.cropH);
+    const quality = toNumber(req.query.quality, 90);
+
+    let bytes: Buffer;
+    if (width && height && cropW > 0 && cropH > 0) {
+      const settings: ExportSettings = {
+        width,
+        height,
+        format: spec.format,
+        quality,
+        crop: {
+          x: Number(req.query.cropX) || 0,
+          y: Number(req.query.cropY) || 0,
+          w: cropW,
+          h: cropH,
+        },
+        preset: null,
+      };
+      bytes = await renderExport(doc, settings);
+    } else {
+      const img = await renderScene(doc, { width, height });
+      bytes = await encodeRaster(img, spec.format, quality);
+    }
+    return reply
+      .header("Content-Disposition", `attachment; filename="${downloadName(`.${spec.format}`)}"`)
+      .type(spec.mime)
+      .send(bytes);
+  });
+
+  /** Persist the scene's saved export settings (size + crop). Body: ExportSettings. */
+  app.post<{ Body: unknown }>("/api/export-settings", async (req, reply) => {
+    const doc = loadScene(scene);
+    let parsed: ReturnType<typeof parseScene>;
+    try {
+      parsed = parseScene({ ...doc.scene, export: req.body ?? undefined });
+    } catch (err) {
+      return reply.code(400).send({ error: `invalid export settings: ${(err as Error).message}` });
+    }
+    doc.scene = parsed;
+    saveScene(doc);
+    history.sync();
+    return { ok: true, export: parsed.export ?? null };
+  });
 
   /** Scene + every referenced asset, zipped as a relocatable .gimpish bundle. */
   app.get("/api/bundle", async (_req, reply) => {

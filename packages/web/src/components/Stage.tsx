@@ -6,8 +6,7 @@ import type {
 } from "react";
 import type { Canvas, HistoryDepths, LayerBox } from "../api";
 import type { Size } from "../lib/geometry";
-import { DownloadMenu } from "./DownloadMenu";
-import { ICON_IMPORT, ICON_REDO, ICON_REFRESH, ICON_UNDO } from "./icons";
+import { ICON_DOWNLOAD, ICON_IMPORT, ICON_REDO, ICON_REFRESH, ICON_UNDO } from "./icons";
 import { Overlay } from "./Overlay";
 
 export interface Toast {
@@ -30,6 +29,13 @@ interface StageProps {
   dropActive: boolean;
   toasts: Toast[];
   history: HistoryDepths;
+  zoomLabel: string;
+  canZoomIn: boolean;
+  canZoomOut: boolean;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onZoomReset: () => void;
+  onExportOpen: () => void;
   onHistory: (op: "undo" | "redo") => void;
   onRefresh: () => void;
   onImportClick: () => void;
@@ -57,6 +63,13 @@ export function Stage({
   dropActive,
   toasts,
   history,
+  zoomLabel,
+  canZoomIn,
+  canZoomOut,
+  onZoomIn,
+  onZoomOut,
+  onZoomReset,
+  onExportOpen,
   onHistory,
   onRefresh,
   onImportClick,
@@ -105,6 +118,37 @@ export function Stage({
           >
             {ICON_REDO}
           </button>
+          <div className="zoom">
+            <button
+              className="btn icon"
+              type="button"
+              title="Zoom out (⌘−)"
+              aria-label="Zoom out"
+              disabled={!canZoomOut}
+              onClick={onZoomOut}
+            >
+              −
+            </button>
+            <button
+              className="btn zoom-label"
+              type="button"
+              title="Reset zoom to fit (⌘0)"
+              aria-label={`Zoom ${zoomLabel} — click to reset`}
+              onClick={onZoomReset}
+            >
+              {zoomLabel}
+            </button>
+            <button
+              className="btn icon"
+              type="button"
+              title="Zoom in (⌘+)"
+              aria-label="Zoom in"
+              disabled={!canZoomIn}
+              onClick={onZoomIn}
+            >
+              +
+            </button>
+          </div>
           <button
             className="btn icon"
             type="button"
@@ -114,7 +158,15 @@ export function Stage({
           >
             {ICON_IMPORT}
           </button>
-          <DownloadMenu canvas={canvas} />
+          <button
+            className="btn icon"
+            type="button"
+            title="Export"
+            aria-label="Export"
+            onClick={onExportOpen}
+          >
+            {ICON_DOWNLOAD}
+          </button>
           <button
             className="btn icon"
             type="button"

@@ -68,6 +68,7 @@ export function addAction(file: string, opts: { name?: string; scene: string }):
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     source: relToScene(doc, file),
     transform: { x: 0, y: 0, scale: 1, rotation: 0 },
     mask: null,

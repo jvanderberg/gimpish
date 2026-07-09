@@ -173,6 +173,7 @@ gimpish layer move subject --top
 gimpish layer opacity subject 0.65
 gimpish layer blend subject multiply
 gimpish layer blur subject 8         # gaussian sigma in canvas px; 0 removes
+gimpish layer adjust subject --brightness -10 --contrast 20 --saturation -15 --warmth 8
 gimpish layer visible subject false
 gimpish layer delete subject
 ```
@@ -308,8 +309,10 @@ examples under `examples/`.
 - Background removal is U²-Net saliency; text-prompted or SAM-style object
   selection is not implemented yet.
 - Masks support one mask per layer.
-- Per-layer gaussian blur is the only filter; adjustment layers (curves,
-  color) are not in the command surface.
+- Per-layer adjustments (brightness, contrast, saturation, exposure, warmth,
+  hue, shadows, highlights, clarity, sharpen) are applied as a flat pipeline;
+  curves, levels, and true adjustment layers (affecting all layers below) are
+  not yet implemented.
 - The editor server watches the scene directory, so very noisy directories can
   trigger extra refreshes.
 

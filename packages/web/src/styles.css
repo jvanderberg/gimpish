@@ -119,6 +119,24 @@ body {
   padding: 0;
 }
 
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zoom .btn.icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.zoom .zoom-label {
+  min-width: 40px;
+  padding: 5px 6px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .dl {
   position: relative;
 }
@@ -330,6 +348,12 @@ body {
   position: relative;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
   border-radius: 2px;
+  /* Hold the exact zoomed size: as a flex child the default flex-shrink would
+     squeeze the width past the viewport (at 2:1/4:1) while height stays fixed,
+     distorting the aspect ratio. margin auto centers it and keeps every edge
+     reachable while scrolling (plain flex centering clips the overflow start). */
+  flex: none;
+  margin: auto;
 }
 
 .frame > img {
@@ -353,6 +377,9 @@ body {
   height: 100%;
   touch-action: none;
   cursor: default;
+  /* Handles sit outside the canvas box (rotate handle above, corners on the
+     edge); don't clip them to the frame — zoom out to bring them into view. */
+  overflow: visible;
 }
 
 .frame svg .box {
@@ -413,7 +440,7 @@ body {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 10px 34px 10px 16px; /* right gutter for the × button */
+  padding: 10px 86px 10px 16px; /* right gutter for eye + adj-toggle + × buttons */
   border: none;
   background: none;
   color: inherit;
@@ -495,6 +522,72 @@ body {
   background: #2a2d35;
 }
 
+/* Adjustments bypass toggle — appears left of the × button, always visible
+   when the layer has adjustments. */
+.adj-toggle {
+  position: absolute;
+  right: 34px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.adj-toggle.on {
+  color: var(--accent);
+}
+
+.adj-toggle.off {
+  color: var(--dim);
+}
+
+.adj-toggle:hover {
+  border-color: var(--line);
+  background: #2a2d35;
+}
+
+/* Visibility toggle — leftmost of the row actions, on every layer. Revealed on
+   hover/selection like ×, but always shown while the layer is hidden so it can
+   be brought back. */
+.vis-toggle {
+  position: absolute;
+  right: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.layer-row:hover .vis-toggle,
+.layer-row.sel .vis-toggle,
+.vis-toggle.off,
+.vis-toggle:focus-visible {
+  opacity: 1;
+}
+
+.vis-toggle:hover {
+  color: var(--txt);
+  border-color: var(--line);
+  background: #2a2d35;
+}
+
 .layer .info {
   min-width: 0;
   flex: 1;
@@ -555,4 +648,280 @@ body {
   color: var(--dim);
   font-size: 11px;
   padding: 0 16px 12px;
+}
+
+/* ---- export modal ---------------------------------------------------------- */
+
+.export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(6, 8, 12, 0.72);
+}
+
+.export-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1200px, 100%);
+  height: min(800px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+
+.export-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.export-head h2 {
+  font-size: 15px;
+  text-transform: none;
+}
+
+.export-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.export-close:hover {
+  color: var(--txt);
+  border-color: var(--line);
+  background: #2a2d35;
+}
+
+.export-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.export-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background-image:
+    linear-gradient(45deg, #202228 25%, transparent 25%),
+    linear-gradient(-45deg, #202228 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #202228 75%),
+    linear-gradient(-45deg, transparent 75%, #202228 75%);
+  background-size: 24px 24px;
+  background-position:
+    0 0,
+    0 12px,
+    12px -12px,
+    -12px 0;
+}
+
+.export-frame {
+  position: relative;
+  touch-action: none;
+}
+
+.export-frame > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.export-crop {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.58);
+  cursor: move;
+  touch-action: none;
+}
+
+.export-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+  touch-action: none;
+}
+
+.export-handle.nw {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+.export-handle.ne {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+.export-handle.se {
+  bottom: -8px;
+  right: -8px;
+  cursor: nwse-resize;
+}
+.export-handle.sw {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+
+.export-controls {
+  width: 300px;
+  flex: none;
+  border-left: 1px solid var(--line);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-field > span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+}
+
+.export-field select,
+.export-dims input {
+  background: #2a2d35;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+}
+
+.export-dims {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.export-dims input {
+  width: 72px;
+}
+
+.export-x,
+.export-unit {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.export-seg {
+  display: flex;
+  gap: 2px;
+}
+
+.export-seg-btn {
+  flex: 1;
+  background: #2a2d35;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  padding: 6px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.export-seg-btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.export-seg-btn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.export-seg-btn.on {
+  color: var(--txt);
+  border-color: var(--accent);
+  background: #243056;
+}
+
+.export-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.export-readout div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.export-readout dt {
+  color: var(--dim);
+}
+
+.export-readout dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.export-warn {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #ffcf99;
+  background: rgba(240, 120, 48, 0.12);
+  border: 1px solid rgba(240, 120, 48, 0.4);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.export-actions .btn {
+  flex: 1;
+  text-align: center;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #08121a;
+  font-weight: 600;
+}
+
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.export-bundle {
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+}
+
+.export-bundle:hover {
+  color: var(--accent);
 }

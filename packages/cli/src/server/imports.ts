@@ -83,6 +83,7 @@ export async function importImage(
     opacity: 1,
     blend: "normal",
     visible: true,
+    adjustEnabled: true,
     source,
     transform: {
       x: Math.round((cw - width * scale) / 2),

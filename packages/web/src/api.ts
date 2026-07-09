@@ -46,12 +46,27 @@ export interface RectSpec {
   rotation?: number;
 }
 
+export interface Adjust {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  exposure: number;
+  warmth: number;
+  hue: number;
+  shadows: number;
+  highlights: number;
+  clarity: number;
+  sharpen: number;
+}
+
 interface LayerCommon {
   id: string;
   name: string;
   opacity: number;
   blend: string;
   visible: boolean;
+  adjust?: Adjust;
+  adjustEnabled?: boolean;
 }
 
 export type Layer =
@@ -82,12 +97,13 @@ export interface Scene {
   version: number;
   canvas: Canvas;
   layers: Layer[];
+  export?: ExportSettings | null;
 }
 
 // The selection-box contract is core's own type — one definition, no drift.
 export type { LayerBox } from "@gimpish/core/model";
 
-import type { LayerBox } from "@gimpish/core/model";
+import type { ExportSettings, LayerBox } from "@gimpish/core/model";
 
 export interface Geometry {
   canvas: { width: number; height: number };
@@ -172,9 +188,32 @@ export async function deleteLayer(id: string): Promise<void> {
   if (!res.ok) throw new Error(`delete responded ${res.status}`);
 }
 
+/** Toggle whether a layer's adjustments are applied at render time. */
+export async function toggleAdjust(id: string, enabled: boolean): Promise<void> {
+  const res = await fetch(`/api/layer/${encodeURIComponent(id)}/adjust-enabled`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error(`adjust-enabled responded ${res.status}`);
+}
+
+/** Show or hide a layer at render time. */
+export async function setLayerVisible(id: string, visible: boolean): Promise<void> {
+  const res = await fetch(`/api/layer/${encodeURIComponent(id)}/visible`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visible }),
+  });
+  if (!res.ok) throw new Error(`visible responded ${res.status}`);
+}
+
 // ---- import / export ---------------------------------------------------------------
 
 export type ExportFormat = "png" | "jpg" | "webp";
+
+// Saved export target — shared shape with the core schema.
+export type { ExportCrop, ExportSettings } from "@gimpish/core/model";
 
 /** Render download URL (server sets Content-Disposition); omit size for native resolution. */
 export function exportUrl(
@@ -185,6 +224,35 @@ export function exportUrl(
   if (size.width) params.set("width", String(size.width));
   if (size.height) params.set("height", String(size.height));
   return `/api/export?${params.toString()}`;
+}
+
+/** Download URL for a cropped export at an exact output size. */
+export function exportCropUrl(s: {
+  format: ExportFormat;
+  width: number;
+  height: number;
+  crop: { x: number; y: number; w: number; h: number };
+}): string {
+  const params = new URLSearchParams({
+    format: s.format,
+    width: String(Math.round(s.width)),
+    height: String(Math.round(s.height)),
+    cropX: String(Math.round(s.crop.x)),
+    cropY: String(Math.round(s.crop.y)),
+    cropW: String(Math.round(s.crop.w)),
+    cropH: String(Math.round(s.crop.h)),
+  });
+  return `/api/export?${params.toString()}`;
+}
+
+/** Persist the scene's saved export settings (size + crop). */
+export async function saveExportSettings(settings: ExportSettings): Promise<void> {
+  const res = await fetch("/api/export-settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error(`export-settings responded ${res.status}`);
 }
 
 /** Scene + all referenced assets as a relocatable .gimpish zip. */
