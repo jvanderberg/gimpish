@@ -338,6 +338,25 @@ npm run dev         # vite dev server for the web app (proxies /api to :8765)
 npm run build       # production web bundle (served by gimpish serve)
 ```
 
+### Electron browser-engine branch
+
+The experimental Electron app renders and edits the scene directly in the
+Chromium renderer, then persists accepted transactions through a sandboxed
+preload bridge. It also exposes a stateless local MCP endpoint at
+`http://127.0.0.1:8767/mcp`.
+
+```bash
+npm run electron
+
+# Open a specific writable scene instead of the userData welcome workspace:
+GIMPISH_SCENE=/absolute/path/to/scene.json npm run electron
+```
+
+Initial MCP tools: `list_documents`, `get_scene`, `set_scene`,
+`transform_layer`, `preview`, `export_png`, `undo`, and `redo`. Browser-local
+rendering is still being brought to parity with the Sharp renderer; the
+existing `gimpish serve` workflow remains available during the migration.
+
 The renderer's output is pinned by golden fixtures (`tests/fixtures/`); the
 parity suite requires the render pipeline to reproduce them within tight pixel
 tolerances.

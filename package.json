@@ -11,11 +11,13 @@
   "scripts": {
     "check": "biome check . && npm run typecheck && npm test",
     "check:fix": "biome check --write .",
-    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/web",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p packages/core && tsc --noEmit -p packages/cli && tsc --noEmit -p packages/web && tsc --noEmit -p packages/app",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run build -w @gimpish/web",
-    "dev": "npm run dev -w @gimpish/web"
+    "dev": "npm run dev -w @gimpish/web",
+    "electron": "npm run build -w @gimpish/web && npm run dev -w @gimpish/app",
+    "electron:build": "npm run build -w @gimpish/web && npm run build -w @gimpish/app"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

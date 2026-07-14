@@ -6,6 +6,7 @@
  */
 
 export * from "./color.ts";
+export * from "./commands.ts";
 export * from "./editor.ts";
 export * from "./export.ts";
 export * from "./geometry.ts";

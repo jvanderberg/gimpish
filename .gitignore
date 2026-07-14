@@ -12,6 +12,7 @@ out.png
 scratch/
 .venv/
 packages/cli/dist/
+packages/app/dist/
 packages/cli/README.md
 packages/cli/LICENSE
 *.tgz
