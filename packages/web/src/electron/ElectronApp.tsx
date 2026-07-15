@@ -229,6 +229,7 @@ export function ElectronApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
+  const [layerDrag, setLayerDrag] = useState<{ id: string; gap: number | null } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const renderGeneration = useRef(0);
@@ -590,6 +591,16 @@ export function ElectronApp() {
       .catch((cause: unknown) => setError(errorMessage(cause)));
   }, [acceptSnapshot, api]);
 
+  const saveBundle = useCallback(() => {
+    setNotice(null);
+    void api
+      .saveBundle()
+      .then((saved) => {
+        if (saved) setNotice(`Saved ${saved.path}`);
+      })
+      .catch((cause: unknown) => setError(errorMessage(cause)));
+  }, [api]);
+
   const exportDocument = useCallback(() => {
     const current = sceneRef.current;
     if (!current || exporting) return;
@@ -664,6 +675,29 @@ export function ElectronApp() {
     [api, mutateScene],
   );
 
+  const displayedLayers = useMemo(() => [...(scene?.layers ?? [])].reverse(), [scene]);
+
+  const commitLayerDrop = useCallback(
+    (layerId: string, displayGap: number) => {
+      if (!layerDrag) {
+        setLayerDrag(null);
+        return;
+      }
+      const fromDisplay = displayedLayers.findIndex((layer) => layer.id === layerId);
+      if (fromDisplay >= 0) {
+        const count = displayedLayers.length;
+        const fromPaint = count - 1 - fromDisplay;
+        const paintGap = count - displayGap;
+        const toPaint = paintGap > fromPaint ? paintGap - 1 : paintGap;
+        if (toPaint !== fromPaint) {
+          mutateScene((draft) => moveLayerTo(draft, layerId, toPaint));
+        }
+      }
+      setLayerDrag(null);
+    },
+    [displayedLayers, layerDrag, mutateScene],
+  );
+
   return (
     <div className="electron-app">
       <header className="electron-topbar">
@@ -678,6 +712,9 @@ export function ElectronApp() {
           </button>
           <button type="button" onClick={() => fileInputRef.current?.click()}>
             Add Image…
+          </button>
+          <button type="button" disabled={!scene} onClick={saveBundle}>
+            Save Bundle…
           </button>
           <input
             ref={fileInputRef}
@@ -752,18 +789,52 @@ export function ElectronApp() {
         </section>
         <aside className="electron-panel">
           <h2>Layers</h2>
-          {[...(scene?.layers ?? [])].reverse().map((layer) => {
-            const index = scene?.layers.findIndex((candidate) => candidate.id === layer.id) ?? 0;
-            const top = (scene?.layers.length ?? 1) - 1;
+          {displayedLayers.map((layer, displayIndex) => {
+            const classes = [
+              "electron-layer",
+              layer.id === selected ? "selected" : "",
+              layer.id === layerDrag?.id ? "dragging" : "",
+              layerDrag?.gap === displayIndex ? "drop-above" : "",
+              displayIndex === displayedLayers.length - 1 &&
+              layerDrag?.gap === displayedLayers.length
+                ? "drop-below"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
             return (
-              <div
-                className={layer.id === selected ? "electron-layer selected" : "electron-layer"}
-                key={layer.id}
-              >
+              <div className={classes} key={layer.id}>
                 <button
                   type="button"
                   className="electron-layer-select"
+                  draggable
                   onClick={() => setSelected(layer.id)}
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("application/x-gimpish-layer", layer.id);
+                    event.dataTransfer.effectAllowed = "move";
+                    setLayerDrag({ id: layer.id, gap: null });
+                  }}
+                  onDragEnd={() => setLayerDrag(null)}
+                  onDragOver={(event) => {
+                    if (!layerDrag) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const gap =
+                      event.clientY < bounds.top + bounds.height / 2
+                        ? displayIndex
+                        : displayIndex + 1;
+                    setLayerDrag((active) => (active ? { ...active, gap } : null));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const gap =
+                      event.clientY < bounds.top + bounds.height / 2
+                        ? displayIndex
+                        : displayIndex + 1;
+                    commitLayerDrop(layerDrag?.id ?? layer.id, gap);
+                  }}
                 >
                   <strong>{layer.name || layer.id}</strong>
                   <span>{layer.type}</span>
@@ -779,22 +850,6 @@ export function ElectronApp() {
                     }
                   >
                     {layer.visible ? "◉" : "○"}
-                  </button>
-                  <button
-                    type="button"
-                    title="Move layer forward"
-                    disabled={index >= top}
-                    onClick={() => mutateScene((draft) => moveLayerTo(draft, layer.id, index + 1))}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    title="Move layer backward"
-                    disabled={index <= 0}
-                    onClick={() => mutateScene((draft) => moveLayerTo(draft, layer.id, index - 1))}
-                  >
-                    ↓
                   </button>
                   <button
                     type="button"

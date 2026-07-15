@@ -352,13 +352,15 @@ npm run electron
 GIMPISH_SCENE=/absolute/path/to/scene.json npm run electron
 ```
 
-Initial MCP tools: `list_documents`, `get_scene`, `set_scene`,
-`transform_layer`, `preview`, `export_png`, `undo`, and `redo`. Browser-local
-rendering supports native scene opening, restricted asset import, local
-move/rotate/scale handles, layer visibility/order/deletion, undo/redo, masks,
-blend modes, and crop-aware PNG/JPEG/WebP export. The existing `gimpish serve`
-workflow remains available while advanced filters, browser-local background
-removal, bundles, and CLI discovery are migrated.
+MCP tools: `list_documents`, `get_scene`, `set_scene`, `transform_layer`,
+`preview`, `export_png`, `save_bundle`, `undo`, and `redo`. Browser-local
+rendering supports native scene and `.gimpish` bundle opening, restricted asset
+import, local move/rotate/scale handles, drag-and-drop layer ordering, layer
+visibility/deletion, undo/redo, masks, blend modes, worker-backed layer
+adjustments, and crop-aware PNG/JPEG/WebP export. Bundle documents use stable
+recovery workspaces and can be repacked from the app or MCP. The existing
+`gimpish serve` workflow remains available while browser-local background
+removal and CLI discovery are migrated.
 
 The renderer's output is pinned by golden fixtures (`tests/fixtures/`); the
 parity suite requires the render pipeline to reproduce them within tight pixel

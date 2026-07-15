@@ -1,4 +1,5 @@
 export * from "./bg.ts";
+export * from "./bundle.ts";
 export * from "./doc.ts";
 export * from "./model.ts";
 export { applyAdjustments, isAdjustNeutral } from "./render/adjust.ts";

@@ -5,9 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./bundle": "./src/bundle.ts",
     "./model": "./src/model.ts"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
     "onnxruntime-node": "^1.27.0",
     "sharp": "^0.34.0",
     "zod": "^4.0.0"

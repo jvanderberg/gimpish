@@ -165,6 +165,18 @@
   background: #252c42;
 }
 
+.electron-layer.dragging {
+  opacity: 0.4;
+}
+
+.electron-layer.drop-above {
+  box-shadow: 0 -3px 0 #6d8cff;
+}
+
+.electron-layer.drop-below {
+  box-shadow: 0 3px 0 #6d8cff;
+}
+
 .electron-layer-select {
   min-width: 0;
   flex: 1;
@@ -177,6 +189,11 @@
   background: transparent;
   color: inherit;
   text-align: left;
+  cursor: grab;
+}
+
+.electron-layer-select:active {
+  cursor: grabbing;
 }
 
 .electron-layer-select strong {

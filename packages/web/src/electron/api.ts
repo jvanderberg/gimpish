@@ -28,6 +28,7 @@ export interface RendererResponse {
 export interface GimpishElectronApi {
   loadDocument(): Promise<DocumentSnapshot>;
   openDocument(): Promise<DocumentSnapshot | null>;
+  saveBundle(): Promise<{ path: string } | null>;
   persistScene(scene: Scene): Promise<{ revision: number }>;
   saveExport(
     data: string,

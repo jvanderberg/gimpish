@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BUNDLE_EXT, createBundle, extractBundle } from "@gimpish/core/bundle";
 import {
   type DocumentCommand,
   type EditReceipt,
@@ -30,6 +31,7 @@ interface OpenDocument {
   path: string;
   scene: Scene;
   revision: number;
+  bundlePath?: string;
 }
 
 interface RendererRequest {
@@ -62,10 +64,18 @@ const pending = new Map<
   }
 >();
 
-function initialScenePath(): string {
+function documentDisplayName(): string {
+  return document.bundlePath
+    ? path.basename(document.bundlePath, BUNDLE_EXT)
+    : path.basename(path.dirname(document.path));
+}
+
+function initialDocumentPath(): string {
   const { GIMPISH_SCENE: configured } = process.env;
   if (configured) return path.resolve(configured);
-  const arg = process.argv.find((value) => value.endsWith(".json"));
+  const arg = process.argv.find(
+    (value) => value.endsWith(".json") || value.toLowerCase().endsWith(BUNDLE_EXT),
+  );
   if (arg) return path.resolve(arg);
 
   const workspace = path.join(app.getPath("userData"), "workspaces", "welcome");
@@ -106,10 +116,43 @@ function initialScenePath(): string {
   return scenePath;
 }
 
-function loadDocument(scenePath: string): OpenDocument {
+function loadDocument(scenePath: string, bundlePath?: string): OpenDocument {
   const resolved = path.resolve(scenePath);
   const scene = parseScene(JSON.parse(readFileSync(resolved, "utf8")));
-  return { path: resolved, scene, revision: 0 };
+  return {
+    path: resolved,
+    scene,
+    revision: 0,
+    ...(bundlePath ? { bundlePath: path.resolve(bundlePath) } : {}),
+  };
+}
+
+function loadBundleDocument(bundlePath: string): OpenDocument {
+  const resolvedBundle = path.resolve(bundlePath);
+  const identity = createHash("sha256").update(resolvedBundle).digest("hex").slice(0, 12);
+  const stem =
+    path
+      .basename(resolvedBundle, BUNDLE_EXT)
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-|-$/g, "") || "bundle";
+  const workspace = path.join(
+    app.getPath("userData"),
+    "workspaces",
+    "bundles",
+    `${stem}-${identity}`,
+  );
+  const scenePath = path.join(workspace, "scene.json");
+  if (!existsSync(scenePath)) {
+    mkdirSync(workspace, { recursive: true });
+    extractBundle(readFileSync(resolvedBundle), scenePath);
+  }
+  return loadDocument(scenePath, resolvedBundle);
+}
+
+function loadDocumentPath(documentPath: string): OpenDocument {
+  return documentPath.toLowerCase().endsWith(BUNDLE_EXT)
+    ? loadBundleDocument(documentPath)
+    : loadDocument(documentPath);
 }
 
 function persistScene(scene: unknown): OpenDocument {
@@ -119,6 +162,29 @@ function persistScene(scene: unknown): OpenDocument {
   renameSync(tmp, document.path);
   document = { ...document, scene: parsed, revision: document.revision + 1 };
   return document;
+}
+
+function referencedAssetPaths(scene: Scene): Set<string> {
+  const referenced = new Set<string>();
+  for (const layer of scene.layers) {
+    if (layer.type !== "image") continue;
+    referenced.add(layer.source);
+    if (layer.mask?.source) referenced.add(layer.mask.source);
+    if (layer.mask?.cache) referenced.add(layer.mask.cache);
+  }
+  return referenced;
+}
+
+function saveBundleTo(bundlePath: string): string {
+  const target = path.resolve(bundlePath);
+  const bundle = createBundle({ path: document.path, scene: document.scene });
+  const tmp = `${target}.electron-tmp`;
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(tmp, bundle);
+  renameSync(tmp, target);
+  document = { ...document, bundlePath: target };
+  win?.setTitle(`Gimpish — ${documentDisplayName()}`);
+  return target;
 }
 
 function sendRendererRequest(
@@ -149,7 +215,7 @@ function registerIpc(): void {
       title: "Open Gimpish scene",
       properties: ["openFile"],
       filters: [
-        { name: "Gimpish scene", extensions: ["json"] },
+        { name: "Gimpish document", extensions: ["gimpish", "json"] },
         { name: "All files", extensions: ["*"] },
       ],
     };
@@ -158,8 +224,8 @@ function registerIpc(): void {
       : await dialog.showOpenDialog(options);
     const selected = result.filePaths[0];
     if (result.canceled || !selected) return null;
-    document = loadDocument(selected);
-    win?.setTitle(`Gimpish — ${path.basename(path.dirname(document.path))}`);
+    document = loadDocumentPath(selected);
+    win?.setTitle(`Gimpish — ${documentDisplayName()}`);
     return { path: document.path, scene: document.scene, revision: document.revision };
   });
 
@@ -168,15 +234,30 @@ function registerIpc(): void {
     return { revision: saved.revision };
   });
 
+  ipcMain.handle("bundle:save", async () => {
+    let target = document.bundlePath;
+    if (!target) {
+      const options: SaveDialogOptions = {
+        title: "Save Gimpish bundle",
+        defaultPath: path.join(path.dirname(document.path), `${documentDisplayName()}.gimpish`),
+        filters: [{ name: "Gimpish bundle", extensions: ["gimpish"] }],
+      };
+      const result = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      target = result.filePath;
+    }
+    return { path: saveBundleTo(target) };
+  });
+
   ipcMain.handle("asset:read", (_event, storedPath: string) => {
     if (typeof storedPath !== "string" || storedPath.length === 0)
       throw new Error("invalid asset path");
-    const documentRoot = path.dirname(document.path);
-    const resolved = path.resolve(documentRoot, storedPath);
-    const relative = path.relative(documentRoot, resolved);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error("asset path escapes the document directory");
+    if (!referencedAssetPaths(document.scene).has(storedPath)) {
+      throw new Error("asset path is not referenced by the active scene");
     }
+    const resolved = path.resolve(path.dirname(document.path), storedPath);
     const bytes = readFileSync(resolved);
     const ext = path.extname(resolved).toLowerCase();
     const mimeType =
@@ -270,7 +351,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#11131a",
-    title: `Gimpish — ${path.basename(path.dirname(document.path))}`,
+    title: `Gimpish — ${documentDisplayName()}`,
     webPreferences: {
       preload: path.join(APP_ROOT, "preload.cjs"),
       contextIsolation: true,
@@ -309,7 +390,7 @@ function createMcpServer(): McpServer {
         documents: [
           {
             id: "active",
-            name: path.basename(path.dirname(document.path)),
+            name: documentDisplayName(),
             path: document.path,
             revision: document.revision,
             active: true,
@@ -392,6 +473,16 @@ function createMcpServer(): McpServer {
         revision: document.revision,
       });
     },
+  );
+
+  server.registerTool(
+    "save_bundle",
+    {
+      description:
+        "Pack the active browser-owned document and every referenced asset into a relocatable .gimpish bundle.",
+      inputSchema: { out: z.string().min(1) },
+    },
+    async ({ out }) => toolText({ out: saveBundleTo(out), revision: document.revision }),
   );
 
   server.registerTool(
@@ -494,7 +585,7 @@ registerIpc();
 
 let mcpHttp: ReturnType<typeof createServer> | null = null;
 void app.whenReady().then(async () => {
-  document = loadDocument(initialScenePath());
+  document = loadDocumentPath(initialDocumentPath());
   win = createWindow();
   mcpHttp = await startMcpServer();
   console.log(`Gimpish MCP: http://127.0.0.1:${MCP_PORT}/mcp`);
