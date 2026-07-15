@@ -1,8 +1,9 @@
 import type { ArrowLayer, GradientSpec, Layer, Scene, TextLayer } from "@gimpish/core/model";
-import { parseColor } from "@gimpish/core/model";
+import { anchorFractions, type ImageLayer, type Mask, parseColor } from "@gimpish/core/model";
 import type { GimpishElectronApi } from "./api";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
+const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
 
 function cssColor(color: string): string {
   if (color === "transparent") return "rgba(0,0,0,0)";
@@ -22,6 +23,102 @@ async function loadImage(api: GimpishElectronApi, storedPath: string): Promise<I
       });
     });
     imageCache.set(storedPath, pending);
+  }
+  return pending;
+}
+
+function maskAlpha(mask: Mask, rgba: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(rgba.length / 4);
+  let hasUsefulAlpha = false;
+  for (let i = 3; i < rgba.length; i += 4) {
+    if (rgba[i] !== 255) {
+      hasUsefulAlpha = true;
+      break;
+    }
+  }
+  for (let pixel = 0; pixel < out.length; pixel += 1) {
+    const offset = pixel * 4;
+    const alpha =
+      mask.kind === "cutout" || hasUsefulAlpha
+        ? (rgba[offset + 3] ?? 0)
+        : Math.round(
+            0.2126 * (rgba[offset] ?? 0) +
+              0.7152 * (rgba[offset + 1] ?? 0) +
+              0.0722 * (rgba[offset + 2] ?? 0),
+          );
+    out[pixel] = mask.invert ? 255 - alpha : alpha;
+  }
+  return out;
+}
+
+async function makeMaskCanvas(
+  api: GimpishElectronApi,
+  mask: Mask,
+  width: number,
+  height: number,
+): Promise<OffscreenCanvas> {
+  const raw = new OffscreenCanvas(width, height);
+  const ctx = raw.getContext("2d");
+  if (!ctx) throw new Error("2D canvas is unavailable");
+
+  if (mask.kind === "shape") {
+    const rect = mask.rect ?? { x: 0, y: 0, w: width, h: height };
+    const x = rect.x;
+    const y = rect.y;
+    const w = rect.w ?? width;
+    const h = rect.h ?? height;
+    ctx.fillStyle = mask.invert ? "black" : "white";
+    if (mask.invert) ctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = mask.invert ? "destination-out" : "source-over";
+    ctx.beginPath();
+    if (mask.shape === "ellipse") {
+      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    } else ctx.rect(x, y, w, h);
+    ctx.fill();
+  } else {
+    const storedPath = mask.kind === "cutout" ? mask.cache : mask.source;
+    if (!storedPath) throw new Error(`${mask.kind} mask is missing its asset path`);
+    const image = await loadImage(api, storedPath);
+    ctx.drawImage(image, 0, 0, width, height);
+    const pixels = ctx.getImageData(0, 0, width, height);
+    const alpha = maskAlpha(mask, pixels.data);
+    for (let pixel = 0; pixel < alpha.length; pixel += 1) {
+      const offset = pixel * 4;
+      pixels.data[offset] = 255;
+      pixels.data[offset + 1] = 255;
+      pixels.data[offset + 2] = 255;
+      pixels.data[offset + 3] = alpha[pixel] ?? 0;
+    }
+    ctx.putImageData(pixels, 0, 0);
+  }
+
+  if (!(mask.feather > 0)) return raw;
+  const feathered = new OffscreenCanvas(width, height);
+  const featherCtx = feathered.getContext("2d");
+  if (!featherCtx) throw new Error("2D canvas is unavailable");
+  featherCtx.filter = `blur(${mask.feather}px)`;
+  featherCtx.drawImage(raw, 0, 0);
+  return feathered;
+}
+
+async function imageForLayer(api: GimpishElectronApi, layer: ImageLayer): Promise<ImageBitmap> {
+  const source = await loadImage(api, layer.source);
+  const layerMask = layer.mask;
+  if (!layerMask) return source;
+  const key = `${layer.source}\u0000${JSON.stringify(layerMask)}`;
+  let pending = maskedImageCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const canvas = new OffscreenCanvas(source.width, source.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("2D canvas is unavailable");
+      ctx.drawImage(source, 0, 0);
+      const mask = await makeMaskCanvas(api, layerMask, source.width, source.height);
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.drawImage(mask, 0, 0);
+      return createImageBitmap(canvas);
+    })();
+    maskedImageCache.set(key, pending);
   }
   return pending;
 }
@@ -53,7 +150,7 @@ function gradient(
   const { width, height } = scene.canvas;
   let result: CanvasGradient;
   if (spec.kind === "radial") {
-    const center = spec.center ?? [0.5, 0.5];
+    const center = spec.center ?? anchorFractions(spec.anchor ?? "center");
     const cx = center[0] * width;
     const cy = center[1] * height;
     result = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(width, height) / 2);
@@ -104,6 +201,7 @@ function drawText(
   ctx.translate(t.x, t.y);
   ctx.rotate(((t.rotation ?? 0) * Math.PI) / 180);
   ctx.font = `${t.style} ${t.weight} ${t.size}px ${JSON.stringify(t.font)}`;
+  ctx.letterSpacing = `${t.letter_spacing}px`;
   ctx.textAlign = t.align;
   ctx.textBaseline = "top";
   if (t.shadow) {
@@ -133,27 +231,33 @@ function drawArrow(
   layer: ArrowLayer,
 ): void {
   const a = layer.arrow;
-  const angle = Math.atan2(a.to_y - a.from_y, a.to_x - a.from_x);
-  const headLength = a.head_length ?? a.width * 2.2;
-  const headWidth = a.head_width ?? a.width * 2.8;
-  const bx = a.to_x - Math.cos(angle) * headLength;
-  const by = a.to_y - Math.sin(angle) * headLength;
-  const nx = -Math.sin(angle) * (headWidth / 2);
-  const ny = Math.cos(angle) * (headWidth / 2);
-  ctx.beginPath();
-  ctx.moveTo(a.from_x, a.from_y);
-  ctx.lineTo(bx, by);
-  ctx.strokeStyle = cssColor(a.color);
-  ctx.lineWidth = a.width;
-  ctx.lineCap = "round";
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(a.to_x, a.to_y);
-  ctx.lineTo(bx + nx, by + ny);
-  ctx.lineTo(bx - nx, by - ny);
-  ctx.closePath();
-  ctx.fillStyle = cssColor(a.color);
-  ctx.fill();
+  const paint = (color: string, extra: number) => {
+    const width = a.width + extra * 2;
+    const headLength = (a.head_length ?? a.width * 2.2) + extra;
+    const headWidth = (a.head_width ?? a.width * 2.8) + extra * 2;
+    const angle = Math.atan2(a.to_y - a.from_y, a.to_x - a.from_x);
+    const bx = a.to_x - Math.cos(angle) * headLength;
+    const by = a.to_y - Math.sin(angle) * headLength;
+    const nx = -Math.sin(angle) * (headWidth / 2);
+    const ny = Math.cos(angle) * (headWidth / 2);
+    ctx.beginPath();
+    ctx.moveTo(a.from_x, a.from_y);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = cssColor(color);
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(a.to_x, a.to_y);
+    ctx.lineTo(bx + nx, by + ny);
+    ctx.lineTo(bx - nx, by - ny);
+    ctx.closePath();
+    ctx.fillStyle = cssColor(color);
+    ctx.fill();
+  };
+
+  if (a.outline && (a.outline_width ?? 0) > 0) paint(a.outline, a.outline_width ?? 0);
+  paint(a.color, 0);
 }
 
 async function drawLayer(
@@ -167,7 +271,7 @@ async function drawLayer(
   setLayerEffects(ctx, layer);
   switch (layer.type) {
     case "image": {
-      const image = await loadImage(api, layer.source);
+      const image = await imageForLayer(api, layer);
       const t = layer.transform;
       const width = image.width * t.scale;
       const height = image.height * t.scale;
@@ -217,7 +321,10 @@ export async function renderScene(
 ): Promise<void> {
   canvas.width = Math.max(1, Math.round(outputWidth));
   canvas.height = Math.max(1, Math.round(outputHeight));
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d") as
+    | CanvasRenderingContext2D
+    | OffscreenCanvasRenderingContext2D
+    | null;
   if (!ctx) throw new Error("2D canvas is unavailable");
   const sx = canvas.width / scene.canvas.width;
   const sy = canvas.height / scene.canvas.height;
