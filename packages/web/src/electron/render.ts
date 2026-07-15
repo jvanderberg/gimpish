@@ -7,7 +7,8 @@ import {
   type Mask,
   parseColor,
 } from "@gimpish/core/model";
-import { applyBrowserAdjustments, isBrowserAdjustNeutral } from "./adjust";
+import { isBrowserAdjustNeutral } from "./adjust";
+import { applyAdjustmentsInWorker } from "./adjust-worker-client";
 import type { GimpishElectronApi } from "./api";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
@@ -354,8 +355,13 @@ async function drawLayer(
         if (!surfaceCtx) throw new Error("2D canvas is unavailable");
         await drawLayerContent(surfaceCtx, scene, layer, api);
         const pixels = surfaceCtx.getImageData(0, 0, surface.width, surface.height);
-        applyBrowserAdjustments(pixels.data, pixels.width, pixels.height, adjust);
-        surfaceCtx.putImageData(pixels, 0, 0);
+        const adjusted = await applyAdjustmentsInWorker(
+          pixels.data,
+          pixels.width,
+          pixels.height,
+          adjust,
+        );
+        surfaceCtx.putImageData(new ImageData(adjusted, pixels.width, pixels.height), 0, 0);
         return createImageBitmap(surface);
       })();
       adjustedLayerCache.set(key, pending);
