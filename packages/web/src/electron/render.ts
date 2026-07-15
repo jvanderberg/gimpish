@@ -12,11 +12,12 @@ import {
 import { isBrowserAdjustNeutral } from "./adjust";
 import { applyAdjustmentsInWorker } from "./adjust-worker-client";
 import type { GimpishElectronApi } from "./api";
-import { canvasFontFamily } from "./vector";
+import { canvasFontFamily, premultiplyBlendPixels } from "./vector";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
 const adjustedLayerCache = new Map<string, Promise<ImageBitmap>>();
+const blendedLayerCache = new Map<string, Promise<ImageBitmap>>();
 
 export function clearRendererCaches(): void {
   for (const pending of imageCache.values()) {
@@ -37,9 +38,16 @@ export function clearRendererCaches(): void {
       () => undefined,
     );
   }
+  for (const pending of blendedLayerCache.values()) {
+    void pending.then(
+      (image) => image.close(),
+      () => undefined,
+    );
+  }
   imageCache.clear();
   maskedImageCache.clear();
   adjustedLayerCache.clear();
+  blendedLayerCache.clear();
 }
 
 function cssColor(color: string): string {
@@ -328,6 +336,51 @@ async function drawLayerContent(
   }
 }
 
+async function blendedLayerBitmap(
+  scene: Scene,
+  layer: Layer,
+  api: GimpishElectronApi,
+): Promise<ImageBitmap> {
+  const key = `${scene.canvas.width}x${scene.canvas.height}\u0000${JSON.stringify(layer)}`;
+  let pending = blendedLayerCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const surface = new OffscreenCanvas(scene.canvas.width, scene.canvas.height);
+      const surfaceCtx = surface.getContext("2d", { willReadFrequently: true });
+      if (!surfaceCtx) throw new Error("2D canvas is unavailable");
+      if (layer.blur && layer.blur > 0) surfaceCtx.filter = `blur(${layer.blur}px)`;
+      await drawLayerContent(surfaceCtx, scene, layer, api);
+      const pixels = surfaceCtx.getImageData(0, 0, surface.width, surface.height);
+      const adjust = layer.adjustEnabled === false ? undefined : layer.adjust;
+      const data =
+        adjust && !isBrowserAdjustNeutral(adjust)
+          ? await applyAdjustmentsInWorker(pixels.data, pixels.width, pixels.height, adjust)
+          : pixels.data;
+
+      // sharp/libvips blend modes consume raw RGBA with RGB effectively
+      // premultiplied by the final source alpha. Canvas blend modes consume
+      // unpremultiplied colors, so mirror libvips explicitly for render parity.
+      premultiplyBlendPixels(data, layer.opacity);
+      surfaceCtx.putImageData(new ImageData(data, pixels.width, pixels.height), 0, 0);
+      return createImageBitmap(surface);
+    })();
+    blendedLayerCache.set(key, pending);
+    if (blendedLayerCache.size > 12) {
+      const oldest = blendedLayerCache.entries().next().value as
+        | [string, Promise<ImageBitmap>]
+        | undefined;
+      if (oldest) {
+        blendedLayerCache.delete(oldest[0]);
+        void oldest[1].then(
+          (image) => image.close(),
+          () => undefined,
+        );
+      }
+    }
+  }
+  return pending;
+}
+
 async function drawLayer(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   scene: Scene,
@@ -336,6 +389,12 @@ async function drawLayer(
 ): Promise<void> {
   if (!layer.visible) return;
   ctx.save();
+  if (layer.blend !== "normal" && !layer.shadow) {
+    ctx.globalCompositeOperation = blendMode(layer);
+    ctx.drawImage(await blendedLayerBitmap(scene, layer, api), 0, 0);
+    ctx.restore();
+    return;
+  }
   setLayerEffects(ctx, layer);
   const adjust = layer.adjustEnabled === false ? undefined : layer.adjust;
   if (adjust && !isBrowserAdjustNeutral(adjust)) {

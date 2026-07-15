@@ -4,7 +4,7 @@ import {
   radialGradientGeometry,
 } from "@gimpish/core/model";
 import { describe, expect, it } from "vitest";
-import { canvasFontFamily } from "../src/electron/vector";
+import { canvasFontFamily, premultiplyBlendPixels } from "../src/electron/vector";
 
 describe("browser vector parity", () => {
   it("leaves CSS generic font families unquoted", () => {
@@ -42,5 +42,11 @@ describe("browser vector parity", () => {
       radius: Math.hypot(100, 50),
     });
     expect(linearGradientGeometry(100, 50, 0)).toEqual({ x1: 0, y1: 0, x2: 100, y2: 0 });
+  });
+
+  it("prepares translucent pixels for libvips-compatible blend modes", () => {
+    const pixels = new Uint8ClampedArray([43, 182, 115, 112, 200, 100, 50, 0]);
+    premultiplyBlendPixels(pixels, 0.85);
+    expect([...pixels]).toEqual([16, 68, 43, 95, 0, 0, 0, 0]);
   });
 });
