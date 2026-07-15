@@ -14,6 +14,16 @@ import {
   uniqueId,
 } from "@gimpish/core/model";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ICON_DOWNLOAD,
+  ICON_IMPORT,
+  ICON_REDO,
+  ICON_REFRESH,
+  ICON_UNDO,
+} from "../components/icons";
+import { LayerPanel } from "../components/LayerPanel";
+import { useElementSize } from "../hooks/useElementSize";
+import { containBox, preferredHitTest } from "../lib/geometry";
 import { electronApi, type RendererRequest, type RendererResponse } from "./api";
 import { removeBackgroundInWorker } from "./background-worker-client";
 import { clearRendererCaches, imageNaturalSize, renderScene } from "./render";
@@ -35,6 +45,15 @@ interface ActiveDrag {
 }
 
 type LayerBoxes = Map<string, LayerBox>;
+
+const ZOOM_STEPS = [0.25, 0.5, 1, 2, 4] as const;
+const ZOOM_LABELS: Readonly<Record<number, string>> = {
+  0.25: "1:4",
+  0.5: "1:2",
+  1: "1:1",
+  2: "2:1",
+  4: "4:1",
+};
 
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -62,16 +81,6 @@ function boxHandles(box: LayerBox, offset: number): { scale: Point[]; rotate: Po
     ],
     rotate: boxPoint(box, 0, -box.h / 2 - offset),
   };
-}
-
-function pointInBox(point: Point, box: LayerBox): boolean {
-  const local = rotateAround(point, { x: box.cx, y: box.cy }, -box.rotation);
-  return (
-    local.x >= box.cx - box.w / 2 &&
-    local.x <= box.cx + box.w / 2 &&
-    local.y >= box.cy - box.h / 2 &&
-    local.y <= box.cy + box.h / 2
-  );
 }
 
 function textLayerBox(scene: Scene, layerId: string): LayerBox | null {
@@ -125,16 +134,6 @@ async function resolveLayerBoxes(
     }),
   );
   return boxes;
-}
-
-function hitLayer(scene: Scene, boxes: LayerBoxes, point: Point): string | null {
-  for (let i = scene.layers.length - 1; i >= 0; i -= 1) {
-    const layer = scene.layers[i];
-    if (!layer?.visible) continue;
-    const box = boxes.get(layer.id);
-    if (box && pointInBox(point, box)) return layer.id;
-  }
-  return null;
 }
 
 function drawSelection(canvas: HTMLCanvasElement, box: LayerBox | undefined): void {
@@ -241,10 +240,20 @@ export function ElectronApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [dropActive, setDropActive] = useState(false);
-  const [layerDrag, setLayerDrag] = useState<{ id: string; gap: number | null } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const { ref: canvasWrapRef, size: availableCanvas } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const renderGeneration = useRef(0);
+
+  const stepZoom = useCallback((direction: number) => {
+    setZoom((current) => {
+      const currentIndex = ZOOM_STEPS.indexOf(current as (typeof ZOOM_STEPS)[number]);
+      const from = currentIndex < 0 ? ZOOM_STEPS.indexOf(1) : currentIndex;
+      const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, from + direction));
+      return ZOOM_STEPS[next] ?? 1;
+    });
+  }, []);
 
   const acceptSnapshot = useCallback((snapshot: Awaited<ReturnType<typeof api.loadDocument>>) => {
     clearRendererCaches();
@@ -272,11 +281,16 @@ export function ElectronApp() {
     if (!canvas || !scene) return;
     const generation = renderGeneration.current + 1;
     renderGeneration.current = generation;
-    void renderScene(canvas, scene, api)
+    const surface = new OffscreenCanvas(scene.canvas.width, scene.canvas.height);
+    void renderScene(surface, scene, api)
       .then(() => {
-        if (renderGeneration.current === generation) {
-          drawSelection(canvas, selected ? boxes.get(selected) : undefined);
-        }
+        if (renderGeneration.current !== generation || canvasRef.current !== canvas) return;
+        canvas.width = surface.width;
+        canvas.height = surface.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("2D canvas is unavailable");
+        context.drawImage(surface, 0, 0);
+        drawSelection(canvas, selected ? boxes.get(selected) : undefined);
       })
       .catch((cause: unknown) => setError(errorMessage(cause)));
   }, [api, boxes, scene, selected]);
@@ -438,6 +452,21 @@ export function ElectronApp() {
           event.preventDefault();
           const op = key === "y" || event.shiftKey ? "redo" : "undo";
           void applyHistory(op, true).catch((cause) => setError(errorMessage(cause)));
+          return;
+        }
+        if (event.key === "=" || event.key === "+") {
+          event.preventDefault();
+          stepZoom(1);
+          return;
+        }
+        if (event.key === "-" || event.key === "_") {
+          event.preventDefault();
+          stepZoom(-1);
+          return;
+        }
+        if (event.key === "0") {
+          event.preventDefault();
+          setZoom(1);
         }
         return;
       }
@@ -473,7 +502,7 @@ export function ElectronApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [applyCommand, applyHistory, boxes, deleteSelected, drag, selected]);
+  }, [applyCommand, applyHistory, boxes, deleteSelected, drag, selected, stepZoom]);
 
   useEffect(() => {
     return api.onCommand((request: RendererRequest) => {
@@ -578,8 +607,14 @@ export function ElectronApp() {
       const point = canvasPoint(canvas, event.clientX, event.clientY);
       const selectedBox = selected ? boxes.get(selected) : undefined;
       const selectedMode = selectedBox ? hitHandle(canvas, selectedBox, point) : null;
+      const orderedBoxes = current.layers.flatMap((layer) => {
+        const box = layer.visible ? boxes.get(layer.id) : undefined;
+        return box ? [box] : [];
+      });
       const layerId =
-        selectedMode && selectedBox ? selectedBox.id : hitLayer(current, boxes, point);
+        selectedMode && selectedBox
+          ? selectedBox.id
+          : preferredHitTest(orderedBoxes, point, selected);
       setSelected(layerId);
       if (!layerId) return;
       const box = boxes.get(layerId);
@@ -738,205 +773,208 @@ export function ElectronApp() {
   );
 
   const displayedLayers = useMemo(() => [...(scene?.layers ?? [])].reverse(), [scene]);
+  const selectedLayer = scene?.layers.find((layer) => layer.id === selected) ?? null;
+  const canvasAspect = scene ? scene.canvas.width / scene.canvas.height : 1;
+  const fittedCanvas = containBox(availableCanvas.w, availableCanvas.h, canvasAspect);
+  const canvasFrame = { w: fittedCanvas.w * zoom, h: fittedCanvas.h * zoom };
+  const zoomLabel = ZOOM_LABELS[zoom] ?? "1:1";
 
-  const commitLayerDrop = useCallback(
-    (layerId: string, displayGap: number) => {
-      if (!layerDrag) {
-        setLayerDrag(null);
-        return;
-      }
-      const fromDisplay = displayedLayers.findIndex((layer) => layer.id === layerId);
-      if (fromDisplay >= 0) {
-        const count = displayedLayers.length;
-        const fromPaint = count - 1 - fromDisplay;
-        const paintGap = count - displayGap;
-        const toPaint = paintGap > fromPaint ? paintGap - 1 : paintGap;
-        if (toPaint !== fromPaint) {
-          mutateScene((draft) => moveLayerTo(draft, layerId, toPaint));
-        }
-      }
-      setLayerDrag(null);
-    },
-    [displayedLayers, layerDrag, mutateScene],
-  );
+  const refreshDocument = useCallback(() => {
+    void api
+      .loadDocument()
+      .then(acceptSnapshot)
+      .catch((cause: unknown) => setError(errorMessage(cause)));
+  }, [acceptSnapshot, api]);
 
   return (
-    <div className="electron-app">
-      <header className="electron-topbar">
-        <div>
-          <strong>gimpish</strong>
-          <span>browser engine · rev {revision}</span>
+    <div className="app">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        multiple
+        hidden
+        onChange={(event) => {
+          if (event.currentTarget.files) importFiles(event.currentTarget.files);
+          event.currentTarget.value = "";
+        }}
+      />
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: file drop target with an equivalent import button */}
+      <div
+        className="stage"
+        onDragEnter={(event) => {
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          setDropActive(true);
+        }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) setDropActive(false);
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return;
+          event.preventDefault();
+          setDropActive(false);
+          importFiles(event.dataTransfer.files);
+        }}
+      >
+        <div className="topbar">
+          <h1>gimpish</h1>
+          <span className="meta" title={path}>
+            <span className="dot ok" />
+            live
+            {scene
+              ? `  ·  ${scene.canvas.width}×${scene.canvas.height}  ·  bg ${scene.canvas.background}`
+              : ""}
+            {path ? `  ·  rev ${revision}` : ""}
+          </span>
+          <div className="actions">
+            <button
+              className="btn icon"
+              type="button"
+              title="Undo (⌘Z)"
+              aria-label="Undo"
+              disabled={historyDepths.undo === 0}
+              onClick={() =>
+                void applyHistory("undo", true).catch((cause) => setError(errorMessage(cause)))
+              }
+            >
+              {ICON_UNDO}
+            </button>
+            <button
+              className="btn icon"
+              type="button"
+              title="Redo (⇧⌘Z)"
+              aria-label="Redo"
+              disabled={historyDepths.redo === 0}
+              onClick={() =>
+                void applyHistory("redo", true).catch((cause) => setError(errorMessage(cause)))
+              }
+            >
+              {ICON_REDO}
+            </button>
+            <div className="zoom">
+              <button
+                className="btn icon"
+                type="button"
+                title="Zoom out (⌘−)"
+                aria-label="Zoom out"
+                disabled={zoom <= ZOOM_STEPS[0]}
+                onClick={() => stepZoom(-1)}
+              >
+                −
+              </button>
+              <button
+                className="btn zoom-label"
+                type="button"
+                title="Reset zoom to fit (⌘0)"
+                onClick={() => setZoom(1)}
+              >
+                {zoomLabel}
+              </button>
+              <button
+                className="btn icon"
+                type="button"
+                title="Zoom in (⌘+)"
+                aria-label="Zoom in"
+                disabled={zoom >= (ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4)}
+                onClick={() => stepZoom(1)}
+              >
+                +
+              </button>
+            </div>
+            <button
+              className="btn"
+              type="button"
+              title="Open a scene or bundle"
+              onClick={openDocument}
+            >
+              Open…
+            </button>
+            <button
+              className="btn icon"
+              type="button"
+              title="Import images"
+              aria-label="Import images"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {ICON_IMPORT}
+            </button>
+            <button className="btn" type="button" disabled={!scene} onClick={saveBundle}>
+              Save Bundle…
+            </button>
+            <button
+              className="btn icon"
+              type="button"
+              title="Export"
+              aria-label="Export"
+              disabled={!scene || exporting}
+              onClick={exportDocument}
+            >
+              {ICON_DOWNLOAD}
+            </button>
+            <button
+              className="btn icon"
+              type="button"
+              title="Refresh"
+              aria-label="Refresh"
+              onClick={refreshDocument}
+            >
+              {ICON_REFRESH}
+            </button>
+          </div>
         </div>
-        <span className="electron-path">{path}</span>
-        <div className="electron-history electron-actions">
-          <button type="button" onClick={openDocument}>
-            Open…
-          </button>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>
-            Add Image…
-          </button>
-          <button type="button" disabled={!scene} onClick={saveBundle}>
-            Save Bundle…
-          </button>
-          <input
-            ref={fileInputRef}
-            className="electron-file-input"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            multiple
-            onChange={(event) => {
-              if (event.currentTarget.files) importFiles(event.currentTarget.files);
-              event.currentTarget.value = "";
-            }}
-          />
-          <button type="button" disabled={!scene || exporting} onClick={exportDocument}>
-            {exporting ? "Exporting…" : "Export…"}
-          </button>
-          <button
-            type="button"
-            disabled={historyDepths.undo === 0}
-            onClick={() =>
-              void applyHistory("undo", true).catch((cause) => setError(errorMessage(cause)))
-            }
-          >
-            Undo
-          </button>
-          <button
-            type="button"
-            disabled={historyDepths.redo === 0}
-            onClick={() =>
-              void applyHistory("redo", true).catch((cause) => setError(errorMessage(cause)))
-            }
-          >
-            Redo
-          </button>
-        </div>
-      </header>
-      <main className="electron-workspace">
-        <section
-          className={dropActive ? "electron-stage drop-active" : "electron-stage"}
-          aria-label="Canvas editor and image drop target"
-          onDragEnter={(event) => {
-            if (!event.dataTransfer.types.includes("Files")) return;
-            event.preventDefault();
-            setDropActive(true);
-          }}
-          onDragOver={(event) => {
-            if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-          }}
-          onDragLeave={(event) => {
-            if (event.currentTarget === event.target) setDropActive(false);
-          }}
-          onDrop={(event) => {
-            if (!event.dataTransfer.files.length) return;
-            event.preventDefault();
-            setDropActive(false);
-            importFiles(event.dataTransfer.files);
-          }}
-        >
+        <div className="canvas-wrap" ref={canvasWrapRef}>
           {scene ? (
-            <canvas
-              ref={canvasRef}
-              className="electron-canvas"
-              style={{ aspectRatio: `${scene.canvas.width} / ${scene.canvas.height}` }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-            />
+            <div
+              className="electron-canvas-frame"
+              style={{ width: `${canvasFrame.w}px`, height: `${canvasFrame.h}px` }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="electron-canvas"
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+              />
+            </div>
           ) : (
             <div className="electron-loading">Loading document…</div>
           )}
-          {dropActive ? <div className="electron-drop-overlay">Drop images to add</div> : null}
-        </section>
-        <aside className="electron-panel">
-          <h2>Layers</h2>
-          {displayedLayers.map((layer, displayIndex) => {
-            const classes = [
-              "electron-layer",
-              layer.id === selected ? "selected" : "",
-              layer.id === layerDrag?.id ? "dragging" : "",
-              layerDrag?.gap === displayIndex ? "drop-above" : "",
-              displayIndex === displayedLayers.length - 1 &&
-              layerDrag?.gap === displayedLayers.length
-                ? "drop-below"
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <div className={classes} key={layer.id}>
-                <button
-                  type="button"
-                  className="electron-layer-select"
-                  draggable
-                  onClick={() => setSelected(layer.id)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/x-gimpish-layer", layer.id);
-                    event.dataTransfer.effectAllowed = "move";
-                    setLayerDrag({ id: layer.id, gap: null });
-                  }}
-                  onDragEnd={() => setLayerDrag(null)}
-                  onDragOver={(event) => {
-                    if (!layerDrag) return;
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    const gap =
-                      event.clientY < bounds.top + bounds.height / 2
-                        ? displayIndex
-                        : displayIndex + 1;
-                    setLayerDrag((active) => (active ? { ...active, gap } : null));
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    const gap =
-                      event.clientY < bounds.top + bounds.height / 2
-                        ? displayIndex
-                        : displayIndex + 1;
-                    commitLayerDrop(layerDrag?.id ?? layer.id, gap);
-                  }}
-                >
-                  <strong>{layer.name || layer.id}</strong>
-                  <span>{layer.type}</span>
-                </button>
-                <div className="electron-layer-actions">
-                  <button
-                    type="button"
-                    title={layer.visible ? "Hide layer" : "Show layer"}
-                    onClick={() =>
-                      mutateScene((draft) => {
-                        findLayer(draft, layer.id).visible = !layer.visible;
-                      })
-                    }
-                  >
-                    {layer.visible ? "◉" : "○"}
-                  </button>
-                  <button
-                    type="button"
-                    title="Delete layer"
-                    onClick={() => {
-                      mutateScene((draft) => removeLayer(draft, layer.id));
-                      if (selected === layer.id) setSelected(null);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {selected ? (
-            <div className="electron-selection">
-              Selected <strong>{selected}</strong>. Drag the layer or use its canvas handles.
-            </div>
-          ) : null}
-          <div className="electron-mcp">MCP: http://127.0.0.1:8767/mcp</div>
-          {notice ? <div className="electron-notice">{notice}</div> : null}
-          {error ? <div className="err">{error}</div> : null}
-        </aside>
-      </main>
+        </div>
+        {dropActive ? <div className="drop-overlay">Drop to import images as layers</div> : null}
+        {notice ? (
+          <div className="toasts">
+            <div className="toast ok">{notice}</div>
+          </div>
+        ) : null}
+      </div>
+      <LayerPanel
+        scene={scene}
+        layers={displayedLayers}
+        sel={selected}
+        onSelect={(id) => setSelected((current) => (current === id ? null : id))}
+        onDelete={(id) => {
+          mutateScene((draft) => removeLayer(draft, id));
+          if (selected === id) setSelected(null);
+        }}
+        onToggleAdjust={(id, enabled) =>
+          mutateScene((draft) => {
+            findLayer(draft, id).adjustEnabled = enabled;
+          })
+        }
+        onToggleVisible={(id, visible) =>
+          mutateScene((draft) => {
+            findLayer(draft, id).visible = visible;
+          })
+        }
+        onReorder={(id, index) => mutateScene((draft) => moveLayerTo(draft, id, index))}
+        err={error}
+        selLayer={selectedLayer}
+      />
     </div>
   );
 }

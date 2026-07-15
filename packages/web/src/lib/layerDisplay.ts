@@ -1,6 +1,6 @@
 /** Icon + subtitle text for a layer row in the panel list. */
 
-import type { Layer } from "../api";
+import type { Layer } from "@gimpish/core/model";
 
 const ICONS: Record<string, string> = {
   image: "🖼",

@@ -68,6 +68,21 @@ export function hitTest(boxes: LayerBox[], pt: Point): string | null {
   return null;
 }
 
+/**
+ * Preserve an explicit layer-panel selection while manipulating the canvas.
+ * The selected layer wins anywhere inside its box; only clicks outside it may
+ * fall through to ordinary topmost-layer hit testing.
+ */
+export function preferredHitTest(
+  boxes: LayerBox[],
+  pt: Point,
+  selectedId: string | null,
+): string | null {
+  const selected = selectedId ? boxes.find((candidate) => candidate.id === selectedId) : undefined;
+  if (selected && insideBox(selected, pt)) return selected.id;
+  return hitTest(boxes, pt);
+}
+
 /** Rotate a canvas point about a box's pivot by the box's rotation. */
 export function rotAboutPivot(
   b: Pick<LayerBox, "rotation" | "pivotx" | "pivoty">,

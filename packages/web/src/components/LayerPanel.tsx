@@ -1,6 +1,6 @@
+import type { Layer, Scene } from "@gimpish/core/model";
 import type { DragEvent as ReactDragEvent } from "react";
 import { useCallback, useState } from "react";
-import type { Layer, Scene } from "../api";
 import { adjustSubtitle, layerSubtitle, shapeIcon } from "../lib/layerDisplay";
 import { ICON_EYE, ICON_EYE_OFF } from "./icons";
 import { Readout } from "./Readout";

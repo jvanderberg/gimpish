@@ -11,6 +11,7 @@ import {
   handlePos,
   hitTest,
   insideBox,
+  preferredHitTest,
   rotAboutPivot,
 } from "../src/lib/geometry";
 
@@ -66,6 +67,18 @@ describe("insideBox / hitTest", () => {
     const top = box({ id: "top" });
     expect(hitTest([bottom, top], { x: 100, y: 100 })).toBe("top");
     expect(hitTest([bottom, top], { x: 500, y: 500 })).toBeNull();
+  });
+
+  it("keeps the selected lower layer when overlapping layers are clicked", () => {
+    const speaker = box({ id: "speaker", w: 80, h: 80 });
+    const max = box({ id: "max", w: 40, h: 40 });
+    expect(preferredHitTest([speaker, max], { x: 100, y: 100 }, "speaker")).toBe("speaker");
+  });
+
+  it("selects the topmost hit when the click is outside the selected layer", () => {
+    const speaker = box({ id: "speaker", cx: 20, cy: 20 });
+    const max = box({ id: "max", cx: 100, cy: 100 });
+    expect(preferredHitTest([speaker, max], { x: 100, y: 100 }, "speaker")).toBe("max");
   });
 });
 

@@ -1,4 +1,4 @@
-import type { Layer } from "../api";
+import type { Layer } from "@gimpish/core/model";
 
 interface ReadoutProps {
   layer: Layer;
