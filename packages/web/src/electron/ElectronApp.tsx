@@ -239,7 +239,6 @@ export function ElectronApp() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [backgroundRemoving, setBackgroundRemoving] = useState<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [layerDrag, setLayerDrag] = useState<{ id: string; gap: number | null } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -388,41 +387,36 @@ export function ElectronApp() {
       if (!current) throw new Error("document is not loaded");
       const layer = findLayer(current, layerId);
       if (layer.type !== "image") throw new Error("background removal requires an image layer");
-      setBackgroundRemoving(layerId);
       setNotice("Preparing local background removal…");
-      try {
-        const [{ url }, asset] = await Promise.all([
-          api.backgroundModel(),
-          api.readAsset(layer.source),
-        ]);
-        setNotice("Removing background locally…");
-        const png = await removeBackgroundInWorker(url, asset.mimeType, base64ToBuffer(asset.data));
-        const uploaded = await api.importAsset(
-          `${layer.id}-cutout.png`,
-          bytesToBase64(new Uint8Array(png)),
-        );
-        const next = parseScene(structuredClone(current));
-        const updated = findLayer(next, layerId);
-        if (updated.type !== "image") throw new Error("background removal requires an image layer");
-        updated.mask = { kind: "cutout", cache: uploaded.path, feather: 0, invert: false };
-        const validated = parseScene(next);
-        recordBefore(current);
-        sceneRef.current = validated;
-        setScene(validated);
-        if (save) await persist(validated);
-        setNotice(`Removed background from ${layer.name || layer.id}`);
-        return {
-          scene: validated,
-          receipt: {
-            summary: `removed background from ${layer.id}`,
-            operations: [
-              { kind: "replace-scene", before: current, after: structuredClone(validated) },
-            ],
-          },
-        };
-      } finally {
-        setBackgroundRemoving(null);
-      }
+      const [{ url }, asset] = await Promise.all([
+        api.backgroundModel(),
+        api.readAsset(layer.source),
+      ]);
+      setNotice("Removing background locally…");
+      const png = await removeBackgroundInWorker(url, asset.mimeType, base64ToBuffer(asset.data));
+      const uploaded = await api.importAsset(
+        `${layer.id}-cutout.png`,
+        bytesToBase64(new Uint8Array(png)),
+      );
+      const next = parseScene(structuredClone(current));
+      const updated = findLayer(next, layerId);
+      if (updated.type !== "image") throw new Error("background removal requires an image layer");
+      updated.mask = { kind: "cutout", cache: uploaded.path, feather: 0, invert: false };
+      const validated = parseScene(next);
+      recordBefore(current);
+      sceneRef.current = validated;
+      setScene(validated);
+      if (save) await persist(validated);
+      setNotice(`Removed background from ${layer.name || layer.id}`);
+      return {
+        scene: validated,
+        receipt: {
+          summary: `removed background from ${layer.id}`,
+          operations: [
+            { kind: "replace-scene", before: current, after: structuredClone(validated) },
+          ],
+        },
+      };
     },
     [api, persist, recordBefore],
   );
@@ -743,7 +737,6 @@ export function ElectronApp() {
   );
 
   const displayedLayers = useMemo(() => [...(scene?.layers ?? [])].reverse(), [scene]);
-  const selectedLayer = scene?.layers.find((layer) => layer.id === selected);
 
   const commitLayerDrop = useCallback(
     (layerId: string, displayGap: number) => {
@@ -935,24 +928,7 @@ export function ElectronApp() {
           })}
           {selected ? (
             <div className="electron-selection">
-              <span>
-                Selected <strong>{selected}</strong>. Drag the layer or use its canvas handles.
-              </span>
-              {selectedLayer?.type === "image" ? (
-                <button
-                  type="button"
-                  disabled={backgroundRemoving !== null}
-                  onClick={() =>
-                    void removeLayerBackground(selectedLayer.id, true).catch((cause: unknown) =>
-                      setError(errorMessage(cause)),
-                    )
-                  }
-                >
-                  {backgroundRemoving === selectedLayer.id
-                    ? "Removing background…"
-                    : "Remove background"}
-                </button>
-              ) : null}
+              Selected <strong>{selected}</strong>. Drag the layer or use its canvas handles.
             </div>
           ) : null}
           <div className="electron-mcp">MCP: http://127.0.0.1:8767/mcp</div>
