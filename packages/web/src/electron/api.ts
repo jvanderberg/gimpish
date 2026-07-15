@@ -29,7 +29,11 @@ export interface GimpishElectronApi {
   loadDocument(): Promise<DocumentSnapshot>;
   openDocument(): Promise<DocumentSnapshot | null>;
   persistScene(scene: Scene): Promise<{ revision: number }>;
-  saveExport(data: string, suggestedName: string): Promise<{ path: string } | null>;
+  saveExport(
+    data: string,
+    suggestedName: string,
+    mimeType: "image/png" | "image/jpeg" | "image/webp",
+  ): Promise<{ path: string } | null>;
   importAsset(name: string, data: string): Promise<{ path: string }>;
   readAsset(path: string): Promise<{ mimeType: string; data: string }>;
   onCommand(callback: (request: RendererRequest) => void): () => void;

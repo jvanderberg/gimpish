@@ -8,6 +8,7 @@ import {
   moveLayerTo,
   parseScene,
   removeLayer,
+  resolveExportCrop,
   rotatePoint,
   type Scene,
   uniqueId,
@@ -476,7 +477,14 @@ export function ElectronApp() {
                 ? (request.height ?? current.canvas.height)
                 : Math.max(1, Math.round(current.canvas.height * scale));
             const preview = new OffscreenCanvas(width, height);
-            await renderScene(preview, current, api, preview.width, preview.height);
+            const crop =
+              request.kind === "render-image" &&
+              current.export &&
+              width === current.export.width &&
+              height === current.export.height
+                ? resolveExportCrop(current.canvas, current.export)
+                : undefined;
+            await renderScene(preview, current, api, preview.width, preview.height, crop);
             const blob = await preview.convertToBlob({ type: "image/png" });
             const data = await blobToBase64(blob);
             response = {
@@ -590,12 +598,20 @@ export function ElectronApp() {
     void (async () => {
       const width = current.export?.width ?? current.canvas.width;
       const height = current.export?.height ?? current.canvas.height;
+      const format = current.export?.format ?? "png";
+      const mimeType =
+        format === "jpg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
       const output = new OffscreenCanvas(width, height);
-      await renderScene(output, current, api, width, height);
-      const blob = await output.convertToBlob({ type: "image/png" });
+      const crop = current.export ? resolveExportCrop(current.canvas, current.export) : undefined;
+      await renderScene(output, current, api, width, height, crop);
+      const blob = await output.convertToBlob({
+        type: mimeType,
+        quality: (current.export?.quality ?? 90) / 100,
+      });
       const data = await blobToBase64(blob);
       const base = path.split(/[\\/]/).at(-2) || "gimpish";
-      const saved = await api.saveExport(data, `${base}.png`);
+      const extension = format === "jpg" ? "jpg" : format;
+      const saved = await api.saveExport(data, `${base}.${extension}`, mimeType);
       if (saved) setNotice(`Exported ${saved.path}`);
     })()
       .catch((cause: unknown) => setError(errorMessage(cause)))
@@ -675,7 +691,7 @@ export function ElectronApp() {
             }}
           />
           <button type="button" disabled={!scene || exporting} onClick={exportDocument}>
-            {exporting ? "Exporting…" : "Export PNG…"}
+            {exporting ? "Exporting…" : "Export…"}
           </button>
           <button
             type="button"

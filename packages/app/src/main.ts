@@ -215,24 +215,34 @@ function registerIpc(): void {
     return { path: `assets/${filename}` };
   });
 
-  ipcMain.handle("export:save", async (_event, data: unknown, suggestedName: unknown) => {
-    if (typeof data !== "string") throw new Error("invalid export data");
-    const safeName =
-      typeof suggestedName === "string" && suggestedName.trim()
-        ? path.basename(suggestedName)
-        : `${path.basename(path.dirname(document.path))}.png`;
-    const options: SaveDialogOptions = {
-      title: "Export PNG",
-      defaultPath: path.join(path.dirname(document.path), safeName),
-      filters: [{ name: "PNG image", extensions: ["png"] }],
-    };
-    const result = win
-      ? await dialog.showSaveDialog(win, options)
-      : await dialog.showSaveDialog(options);
-    if (result.canceled || !result.filePath) return null;
-    writeFileSync(result.filePath, Buffer.from(data, "base64"));
-    return { path: result.filePath };
-  });
+  ipcMain.handle(
+    "export:save",
+    async (_event, data: unknown, suggestedName: unknown, mimeType: unknown) => {
+      if (typeof data !== "string") throw new Error("invalid export data");
+      const formats: Record<string, { extension: string; name: string }> = {
+        "image/png": { extension: "png", name: "PNG image" },
+        "image/jpeg": { extension: "jpg", name: "JPEG image" },
+        "image/webp": { extension: "webp", name: "WebP image" },
+      };
+      const format = typeof mimeType === "string" ? formats[mimeType] : undefined;
+      if (!format) throw new Error("unsupported export format");
+      const safeName =
+        typeof suggestedName === "string" && suggestedName.trim()
+          ? path.basename(suggestedName)
+          : `${path.basename(path.dirname(document.path))}.${format.extension}`;
+      const options: SaveDialogOptions = {
+        title: "Export image",
+        defaultPath: path.join(path.dirname(document.path), safeName),
+        filters: [{ name: format.name, extensions: [format.extension] }],
+      };
+      const result = win
+        ? await dialog.showSaveDialog(win, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return null;
+      writeFileSync(result.filePath, Buffer.from(data, "base64"));
+      return { path: result.filePath };
+    },
+  );
 
   ipcMain.handle("document:command-result", (_event, raw: unknown) => {
     const response = raw as RendererResponse;

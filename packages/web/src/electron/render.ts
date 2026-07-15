@@ -1,5 +1,12 @@
 import type { ArrowLayer, GradientSpec, Layer, Scene, TextLayer } from "@gimpish/core/model";
-import { anchorFractions, type ImageLayer, type Mask, parseColor } from "@gimpish/core/model";
+import {
+  anchorFractions,
+  coverCrop,
+  type ExportCrop,
+  type ImageLayer,
+  type Mask,
+  parseColor,
+} from "@gimpish/core/model";
 import type { GimpishElectronApi } from "./api";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
@@ -335,6 +342,7 @@ export async function renderScene(
   api: GimpishElectronApi,
   outputWidth = scene.canvas.width,
   outputHeight = scene.canvas.height,
+  sourceCrop?: ExportCrop,
 ): Promise<void> {
   canvas.width = Math.max(1, Math.round(outputWidth));
   canvas.height = Math.max(1, Math.round(outputHeight));
@@ -343,11 +351,14 @@ export async function renderScene(
     | OffscreenCanvasRenderingContext2D
     | null;
   if (!ctx) throw new Error("2D canvas is unavailable");
-  const sx = canvas.width / scene.canvas.width;
-  const sy = canvas.height / scene.canvas.height;
+  const crop =
+    sourceCrop ?? coverCrop(scene.canvas.width, scene.canvas.height, canvas.width, canvas.height);
+  const sx = canvas.width / crop.w;
+  const sy = canvas.height / crop.h;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
   ctx.scale(sx, sy);
-  ctx.clearRect(0, 0, scene.canvas.width, scene.canvas.height);
+  ctx.translate(-crop.x, -crop.y);
   if (scene.canvas.background !== "transparent") {
     ctx.fillStyle = cssColor(scene.canvas.background);
     ctx.fillRect(0, 0, scene.canvas.width, scene.canvas.height);
