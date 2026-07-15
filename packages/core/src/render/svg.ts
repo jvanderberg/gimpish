@@ -6,7 +6,7 @@
  */
 
 import { svgColor } from "../color.ts";
-import { anchorFractions } from "../geometry.ts";
+import { arrowPolygonPoints, linearGradientGeometry, radialGradientGeometry } from "../geometry.ts";
 import type { ArrowSpec, Canvas, GradientSpec, ShapeLayer, TextSpec } from "../schema.ts";
 
 export function escapeXml(text: string): string {
@@ -98,50 +98,15 @@ export function gradientSvg(canvas: Canvas, g: GradientSpec): string {
   let def: string;
 
   if (g.kind === "radial") {
-    let fx: number;
-    let fy: number;
-    if (g.center) {
-      [fx, fy] = g.center;
-    } else {
-      [fx, fy] = anchorFractions(g.anchor ?? "center");
-    }
-    const cx = fx * W;
-    const cy = fy * H;
-    const corners: Array<[number, number]> = [
-      [0, 0],
-      [W, 0],
-      [0, H],
-      [W, H],
-    ];
-    const r = Math.max(...corners.map(([px, py]) => Math.hypot(px - cx, py - cy)), 1e-6);
+    const { cx, cy, radius } = radialGradientGeometry(W, H, g.center, g.anchor ?? "center");
     def =
       `<radialGradient id="g" gradientUnits="userSpaceOnUse" ` +
-      `cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}">${stopTags(g)}</radialGradient>`;
+      `cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(radius)}">${stopTags(g)}</radialGradient>`;
   } else {
-    let dx: number;
-    let dy: number;
-    if (g.angle != null) {
-      const rad = (g.angle * Math.PI) / 180;
-      dx = Math.cos(rad);
-      dy = Math.sin(rad);
-    } else {
-      const [fx, fy] = anchorFractions(g.anchor ?? "top");
-      dx = 0.5 - fx;
-      dy = 0.5 - fy;
-      const norm = Math.hypot(dx, dy);
-      if (norm === 0) {
-        [dx, dy] = [0, 1]; // centered linear is meaningless -> top->bottom
-      } else {
-        dx /= norm;
-        dy /= norm;
-      }
-    }
-    const projections = [0, W * dx, H * dy, W * dx + H * dy];
-    const pmin = Math.min(...projections);
-    const pmax = Math.max(...projections);
+    const { x1, y1, x2, y2 } = linearGradientGeometry(W, H, g.angle, g.anchor ?? "top");
     def =
       `<linearGradient id="g" gradientUnits="userSpaceOnUse" ` +
-      `x1="${fmt(dx * pmin)}" y1="${fmt(dy * pmin)}" x2="${fmt(dx * pmax)}" y2="${fmt(dy * pmax)}">` +
+      `x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2)}" y2="${fmt(y2)}">` +
       `${stopTags(g)}</linearGradient>`;
   }
 
@@ -154,31 +119,10 @@ export function gradientSvg(canvas: Canvas, g: GradientSpec): string {
 // ---- arrows -------------------------------------------------------------------------
 
 export function arrowSvg(canvas: Canvas, a: ArrowSpec): string {
-  const { from_x: x1, from_y: y1, to_x: x2, to_y: y2 } = a;
   const { color, opacity } = svgColor(a.color);
   const width = a.width;
-  const headLength = Math.min(a.head_length ?? width * 2.4, Math.hypot(x2 - x1, y2 - y1));
-  const headWidth = a.head_width ?? width * 2.4;
   const outlineWidth = a.outline_width ?? Math.max(0, width * 0.35);
-
-  const length = Math.hypot(x2 - x1, y2 - y1);
-  if (length <= 0) throw new Error("arrow needs distinct endpoints");
-  const ux = (x2 - x1) / length;
-  const uy = (y2 - y1) / length;
-  const px = -uy;
-  const py = ux;
-  const bx = x2 - headLength * ux;
-  const by = y2 - headLength * uy;
-
-  const points: Array<[number, number]> = [
-    [x1 + width * 0.5 * px, y1 + width * 0.5 * py],
-    [bx + width * 0.5 * px, by + width * 0.5 * py],
-    [bx + headWidth * 0.5 * px, by + headWidth * 0.5 * py],
-    [x2, y2],
-    [bx - headWidth * 0.5 * px, by - headWidth * 0.5 * py],
-    [bx - width * 0.5 * px, by - width * 0.5 * py],
-    [x1 - width * 0.5 * px, y1 - width * 0.5 * py],
-  ];
+  const points = arrowPolygonPoints(a);
   const polygon = points.map(([px2, py2]) => `${fmt(px2)},${fmt(py2)}`).join(" ");
 
   let strokeAttrs = "";

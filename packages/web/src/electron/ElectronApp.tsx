@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { electronApi, type RendererRequest, type RendererResponse } from "./api";
 import { removeBackgroundInWorker } from "./background-worker-client";
 import { clearRendererCaches, imageNaturalSize, renderScene } from "./render";
+import { canvasFontFamily } from "./vector";
 
 interface Point {
   x: number;
@@ -79,7 +80,7 @@ function textLayerBox(scene: Scene, layerId: string): LayerBox | null {
   const t = layer.text;
   const measure = new OffscreenCanvas(1, 1).getContext("2d");
   if (!measure) return null;
-  measure.font = `${t.style} ${t.weight} ${t.size}px ${JSON.stringify(t.font)}`;
+  measure.font = `${t.style} ${t.weight} ${t.size}px ${canvasFontFamily(t.font)}`;
   measure.letterSpacing = `${t.letter_spacing}px`;
   const lines = t.content.split("\n");
   const width = Math.max(t.size * 0.25, ...lines.map((line) => measure.measureText(line).width));

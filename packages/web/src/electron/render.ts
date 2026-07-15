@@ -1,15 +1,18 @@
 import type { ArrowLayer, GradientSpec, Layer, Scene, TextLayer } from "@gimpish/core/model";
 import {
-  anchorFractions,
+  arrowPolygonPoints,
   coverCrop,
   type ExportCrop,
   type ImageLayer,
+  linearGradientGeometry,
   type Mask,
   parseColor,
+  radialGradientGeometry,
 } from "@gimpish/core/model";
 import { isBrowserAdjustNeutral } from "./adjust";
 import { applyAdjustmentsInWorker } from "./adjust-worker-client";
 import type { GimpishElectronApi } from "./api";
+import { canvasFontFamily } from "./vector";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
@@ -184,18 +187,16 @@ function gradient(
   const { width, height } = scene.canvas;
   let result: CanvasGradient;
   if (spec.kind === "radial") {
-    const center = spec.center ?? anchorFractions(spec.anchor ?? "center");
-    const cx = center[0] * width;
-    const cy = center[1] * height;
-    result = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(width, height) / 2);
+    const { cx, cy, radius } = radialGradientGeometry(
+      width,
+      height,
+      spec.center,
+      spec.anchor ?? "center",
+    );
+    result = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
   } else {
-    const angle = ((spec.angle ?? 0) * Math.PI) / 180;
-    const cx = width / 2;
-    const cy = height / 2;
-    const radius = Math.abs(width * Math.cos(angle)) / 2 + Math.abs(height * Math.sin(angle)) / 2;
-    const dx = Math.cos(angle) * radius;
-    const dy = Math.sin(angle) * radius;
-    result = ctx.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+    const line = linearGradientGeometry(width, height, spec.angle, spec.anchor ?? "top");
+    result = ctx.createLinearGradient(line.x1, line.y1, line.x2, line.y2);
   }
   for (const stop of spec.stops) result.addColorStop(stop.at, cssColor(stop.color));
   return result;
@@ -227,25 +228,28 @@ function drawText(
   ctx.save();
   ctx.translate(t.x, t.y);
   ctx.rotate(((t.rotation ?? 0) * Math.PI) / 180);
-  ctx.font = `${t.style} ${t.weight} ${t.size}px ${JSON.stringify(t.font)}`;
+  ctx.font = `${t.style} ${t.weight} ${t.size}px ${canvasFontFamily(t.font)}`;
   ctx.letterSpacing = `${t.letter_spacing}px`;
   ctx.textAlign = t.align;
   ctx.textBaseline = "top";
-  if (t.shadow) {
-    ctx.shadowColor = cssColor(t.shadow.color);
-    ctx.shadowOffsetX = t.shadow.dx;
-    ctx.shadowOffsetY = t.shadow.dy;
-    ctx.shadowBlur = t.shadow.blur * 2;
-  }
   const lines = t.content.split("\n");
   const lineHeight = t.size * t.line_height;
   for (const [index, line] of lines.entries()) {
     const y = index * lineHeight;
+    if (t.shadow) {
+      ctx.shadowColor = cssColor(t.shadow.color);
+      ctx.shadowOffsetX = t.shadow.dx;
+      ctx.shadowOffsetY = t.shadow.dy;
+      ctx.shadowBlur = t.shadow.blur * 2;
+    }
     if (t.stroke && t.stroke_width > 0) {
       ctx.strokeStyle = cssColor(t.stroke);
-      ctx.lineWidth = t.stroke_width * 2;
+      ctx.lineWidth = t.stroke_width;
       ctx.lineJoin = "round";
       ctx.strokeText(line, 0, y);
+      // The SVG filter shadows the combined stroked-and-filled glyph once.
+      // Stroke already contains that full silhouette, so do not cast it again for fill.
+      ctx.shadowColor = "transparent";
     }
     ctx.fillStyle = t.gradient ? gradient(ctx, scene, t.gradient) : cssColor(t.fill);
     ctx.fillText(line, 0, y);
@@ -258,33 +262,22 @@ function drawArrow(
   layer: ArrowLayer,
 ): void {
   const a = layer.arrow;
-  const paint = (color: string, extra: number) => {
-    const width = a.width + extra * 2;
-    const headLength = (a.head_length ?? a.width * 2.2) + extra;
-    const headWidth = (a.head_width ?? a.width * 2.8) + extra * 2;
-    const angle = Math.atan2(a.to_y - a.from_y, a.to_x - a.from_x);
-    const bx = a.to_x - Math.cos(angle) * headLength;
-    const by = a.to_y - Math.sin(angle) * headLength;
-    const nx = -Math.sin(angle) * (headWidth / 2);
-    const ny = Math.cos(angle) * (headWidth / 2);
-    ctx.beginPath();
-    ctx.moveTo(a.from_x, a.from_y);
-    ctx.lineTo(bx, by);
-    ctx.strokeStyle = cssColor(color);
-    ctx.lineWidth = width;
-    ctx.lineCap = "round";
+  const points = arrowPolygonPoints(a);
+  const first = points[0];
+  if (!first) return;
+  ctx.beginPath();
+  ctx.moveTo(first[0], first[1]);
+  for (const point of points.slice(1)) ctx.lineTo(point[0], point[1]);
+  ctx.closePath();
+  ctx.fillStyle = cssColor(a.color);
+  ctx.fill();
+  const outlineWidth = a.outline_width ?? Math.max(0, a.width * 0.35);
+  if (a.outline && outlineWidth > 0) {
+    ctx.strokeStyle = cssColor(a.outline);
+    ctx.lineWidth = outlineWidth;
+    ctx.lineJoin = "round";
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(a.to_x, a.to_y);
-    ctx.lineTo(bx + nx, by + ny);
-    ctx.lineTo(bx - nx, by - ny);
-    ctx.closePath();
-    ctx.fillStyle = cssColor(color);
-    ctx.fill();
-  };
-
-  if (a.outline && (a.outline_width ?? 0) > 0) paint(a.outline, a.outline_width ?? 0);
-  paint(a.color, 0);
+  }
 }
 
 async function drawLayerContent(

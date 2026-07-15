@@ -1,0 +1,46 @@
+import {
+  arrowPolygonPoints,
+  linearGradientGeometry,
+  radialGradientGeometry,
+} from "@gimpish/core/model";
+import { describe, expect, it } from "vitest";
+import { canvasFontFamily } from "../src/electron/vector";
+
+describe("browser vector parity", () => {
+  it("leaves CSS generic font families unquoted", () => {
+    expect(canvasFontFamily("sans-serif")).toBe("sans-serif");
+    expect(canvasFontFamily("system-ui")).toBe("system-ui");
+    expect(canvasFontFamily("Helvetica Neue")).toBe('"Helvetica Neue"');
+  });
+
+  it("builds a single shaft-and-head arrow polygon", () => {
+    expect(
+      arrowPolygonPoints({
+        from_x: 0,
+        from_y: 0,
+        to_x: 100,
+        to_y: 0,
+        width: 20,
+        head_length: 30,
+        head_width: 40,
+      }),
+    ).toEqual([
+      [0, 10],
+      [70, 10],
+      [70, 20],
+      [100, 0],
+      [70, -20],
+      [70, -10],
+      [0, -10],
+    ]);
+  });
+
+  it("matches farthest-corner radial and projected linear geometry", () => {
+    expect(radialGradientGeometry(100, 50, [0, 0])).toEqual({
+      cx: 0,
+      cy: 0,
+      radius: Math.hypot(100, 50),
+    });
+    expect(linearGradientGeometry(100, 50, 0)).toEqual({ x1: 0, y1: 0, x2: 100, y2: 0 });
+  });
+});

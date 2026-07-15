@@ -64,6 +64,93 @@ export interface GradientStop {
   color: string;
 }
 
+export interface ArrowGeometryInput {
+  from_x: number;
+  from_y: number;
+  to_x: number;
+  to_y: number;
+  width: number;
+  head_length?: number | undefined;
+  head_width?: number | undefined;
+}
+
+/** The single closed arrow polygon used by both the SVG and browser renderers. */
+export function arrowPolygonPoints(arrow: ArrowGeometryInput): Array<[number, number]> {
+  const { from_x: x1, from_y: y1, to_x: x2, to_y: y2, width } = arrow;
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  if (length <= 0) throw new Error("arrow needs distinct endpoints");
+  const headLength = Math.min(arrow.head_length ?? width * 2.4, length);
+  const headWidth = arrow.head_width ?? width * 2.4;
+  const ux = (x2 - x1) / length;
+  const uy = (y2 - y1) / length;
+  const px = -uy;
+  const py = ux;
+  const bx = x2 - headLength * ux;
+  const by = y2 - headLength * uy;
+  return [
+    [x1 + width * 0.5 * px, y1 + width * 0.5 * py],
+    [bx + width * 0.5 * px, by + width * 0.5 * py],
+    [bx + headWidth * 0.5 * px, by + headWidth * 0.5 * py],
+    [x2, y2],
+    [bx - headWidth * 0.5 * px, by - headWidth * 0.5 * py],
+    [bx - width * 0.5 * px, by - width * 0.5 * py],
+    [x1 - width * 0.5 * px, y1 - width * 0.5 * py],
+  ];
+}
+
+export function radialGradientGeometry(
+  width: number,
+  height: number,
+  center?: readonly [number, number],
+  anchor = "center",
+): { cx: number; cy: number; radius: number } {
+  const [fx, fy] = center ?? anchorFractions(anchor);
+  const cx = fx * width;
+  const cy = fy * height;
+  const radius = Math.max(
+    Math.hypot(cx, cy),
+    Math.hypot(width - cx, cy),
+    Math.hypot(cx, height - cy),
+    Math.hypot(width - cx, height - cy),
+    1e-6,
+  );
+  return { cx, cy, radius };
+}
+
+export function linearGradientGeometry(
+  width: number,
+  height: number,
+  angle?: number,
+  anchor = "top",
+): { x1: number; y1: number; x2: number; y2: number } {
+  let dx: number;
+  let dy: number;
+  if (angle !== undefined) {
+    const radians = (angle * Math.PI) / 180;
+    dx = Math.cos(radians);
+    dy = Math.sin(radians);
+  } else {
+    const [fx, fy] = anchorFractions(anchor);
+    dx = 0.5 - fx;
+    dy = 0.5 - fy;
+    const length = Math.hypot(dx, dy);
+    if (length === 0) [dx, dy] = [0, 1];
+    else {
+      dx /= length;
+      dy /= length;
+    }
+  }
+  const projections = [0, width * dx, height * dy, width * dx + height * dy];
+  const minimum = Math.min(...projections);
+  const maximum = Math.max(...projections);
+  return {
+    x1: dx * minimum,
+    y1: dy * minimum,
+    x2: dx * maximum,
+    y2: dy * maximum,
+  };
+}
+
 /** Parse 'at:color, at:color, ...' e.g. '0:#000000ff, 1:#00000000'. */
 export function parseStops(text: string): GradientStop[] {
   const stops: GradientStop[] = [];
