@@ -239,6 +239,29 @@
   line-height: 1.5;
 }
 
+.electron-selection {
+  display: grid;
+  gap: 8px;
+}
+
+.electron-selection button {
+  justify-self: start;
+  padding: 5px 9px;
+  border: 1px solid #3a4662;
+  border-radius: 5px;
+  background: #242b3b;
+  color: #dfe6f8;
+}
+
+.electron-selection button:hover:not(:disabled) {
+  border-color: #5d76b8;
+  background: #2b3650;
+}
+
+.electron-selection button:disabled {
+  opacity: 0.45;
+}
+
 .electron-mcp {
   padding-top: 14px;
   border-top: 1px solid #292e3b;

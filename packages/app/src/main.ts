@@ -1,7 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { homedir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_EXT, createBundle, extractBundle } from "@gimpish/core/bundle";
 import {
@@ -26,6 +38,10 @@ import { z } from "zod";
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const MCP_PORT = 8767;
 const COMMAND_TIMEOUT_MS = 30_000;
+const BACKGROUND_TIMEOUT_MS = 5 * 60_000;
+const U2NET_MODEL_PATH = path.join(homedir(), ".u2net", "u2net.onnx");
+const U2NET_MODEL_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx";
+let modelDownload: Promise<string> | null = null;
 
 interface OpenDocument {
   path: string;
@@ -36,8 +52,15 @@ interface OpenDocument {
 
 interface RendererRequest {
   requestId: string;
-  kind: "apply-command" | "replace-scene" | "history" | "render-preview" | "render-image";
+  kind:
+    | "apply-command"
+    | "replace-scene"
+    | "history"
+    | "render-preview"
+    | "render-image"
+    | "remove-background";
   command?: DocumentCommand;
+  layerId?: string;
   scene?: Scene;
   historyOp?: "undo" | "redo";
   max?: number;
@@ -187,8 +210,28 @@ function saveBundleTo(bundlePath: string): string {
   return target;
 }
 
+async function ensureU2NetModel(): Promise<string> {
+  if (existsSync(U2NET_MODEL_PATH)) return U2NET_MODEL_PATH;
+  if (modelDownload) return modelDownload;
+  modelDownload = (async () => {
+    mkdirSync(path.dirname(U2NET_MODEL_PATH), { recursive: true });
+    const response = await fetch(U2NET_MODEL_URL);
+    if (!response.ok || !response.body) {
+      throw new Error(`failed to download U²-Net: HTTP ${response.status}`);
+    }
+    const temporary = `${U2NET_MODEL_PATH}.download`;
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary));
+    renameSync(temporary, U2NET_MODEL_PATH);
+    return U2NET_MODEL_PATH;
+  })().finally(() => {
+    modelDownload = null;
+  });
+  return modelDownload;
+}
+
 function sendRendererRequest(
   request: Omit<RendererRequest, "requestId">,
+  timeoutMs = COMMAND_TIMEOUT_MS,
 ): Promise<RendererResponse> {
   if (!win || win.isDestroyed())
     return Promise.reject(new Error("no active Gimpish document window"));
@@ -196,8 +239,8 @@ function sendRendererRequest(
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
-      reject(new Error(`renderer did not answer ${request.kind} within ${COMMAND_TIMEOUT_MS}ms`));
-    }, COMMAND_TIMEOUT_MS);
+      reject(new Error(`renderer did not answer ${request.kind} within ${timeoutMs}ms`));
+    }, timeoutMs);
     pending.set(requestId, { resolve, reject, timer });
     win?.webContents.send("document:command", { ...request, requestId });
   });
@@ -249,6 +292,11 @@ function registerIpc(): void {
       target = result.filePath;
     }
     return { path: saveBundleTo(target) };
+  });
+
+  ipcMain.handle("model:background", async () => {
+    await ensureU2NetModel();
+    return { url: `http://127.0.0.1:${MCP_PORT}/models/u2net.onnx` };
   });
 
   ipcMain.handle("asset:read", (_event, storedPath: string) => {
@@ -486,6 +534,22 @@ function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "remove_background",
+    {
+      description:
+        "Remove an image layer's background locally in the browser with U²-Net and attach the generated cutout mask.",
+      inputSchema: { layerId: z.string().min(1) },
+    },
+    async ({ layerId }) => {
+      const response = await sendRendererRequest(
+        { kind: "remove-background", layerId },
+        BACKGROUND_TIMEOUT_MS,
+      );
+      return toolText({ revision: document.revision, receipt: response.receipt });
+    },
+  );
+
+  server.registerTool(
     "preview",
     {
       description: "Render the active Gimpish document and return an inline PNG preview.",
@@ -529,6 +593,29 @@ async function startMcpServer(): Promise<ReturnType<typeof createServer>> {
     const host = req.headers.host?.toLowerCase();
     if (host !== `127.0.0.1:${MCP_PORT}` && host !== `localhost:${MCP_PORT}`) {
       res.writeHead(403).end("forbidden host");
+      return;
+    }
+    if (req.url === "/models/u2net.onnx") {
+      if (req.method !== "GET") {
+        res.writeHead(405).end("method not allowed");
+        return;
+      }
+      void ensureU2NetModel()
+        .then((modelPath) => {
+          const size = statSync(modelPath).size;
+          res.writeHead(200, {
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "Content-Length": size,
+            "Content-Type": "application/octet-stream",
+          });
+          createReadStream(modelPath).pipe(res);
+        })
+        .catch((error: unknown) => {
+          console.error("Model request failed", error);
+          if (!res.headersSent) res.writeHead(500).end("model unavailable");
+          else res.destroy(error instanceof Error ? error : new Error(String(error)));
+        });
       return;
     }
     if (req.url !== "/mcp") {

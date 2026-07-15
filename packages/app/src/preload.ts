@@ -4,6 +4,7 @@ const api = {
   loadDocument: () => ipcRenderer.invoke("document:load"),
   openDocument: () => ipcRenderer.invoke("document:open"),
   saveBundle: () => ipcRenderer.invoke("bundle:save"),
+  backgroundModel: () => ipcRenderer.invoke("model:background"),
   persistScene: (scene: unknown) => ipcRenderer.invoke("document:persist", scene),
   saveExport: (data: string, suggestedName: string, mimeType: string) =>
     ipcRenderer.invoke("export:save", data, suggestedName, mimeType),
