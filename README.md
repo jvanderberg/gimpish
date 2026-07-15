@@ -353,7 +353,8 @@ GIMPISH_SCENE=/absolute/path/to/scene.json npm run electron
 ```
 
 MCP tools: `list_documents`, `get_scene`, `set_scene`, `transform_layer`,
-`remove_background`, `preview`, `export_png`, `save_bundle`, `undo`, and `redo`. Browser-local
+`fit_layer`, `edit_layer`, `reorder_layer`, `remove_background`, `preview`,
+`export_png`, `save_bundle`, `undo`, and `redo`. Browser-local
 rendering supports native scene and `.gimpish` bundle opening, restricted asset
 import, local move/rotate/scale handles, drag-and-drop layer ordering, layer
 visibility/deletion, undo/redo, masks, blend modes, worker-backed layer

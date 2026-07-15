@@ -349,10 +349,11 @@ export function ElectronApp() {
       let effective = command;
       const layer = findLayer(current, command.layerId);
       if (
-        command.kind === "transform-layer" &&
-        command.scale !== undefined &&
         layer.type === "image" &&
-        !command.naturalSize
+        ((command.kind === "transform-layer" &&
+          command.scale !== undefined &&
+          !command.naturalSize) ||
+          (command.kind === "fit-layer" && !command.naturalSize))
       ) {
         effective = { ...command, naturalSize: await imageNaturalSize(api, layer.source) };
       }

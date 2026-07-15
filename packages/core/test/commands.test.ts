@@ -57,4 +57,51 @@ describe("applyDocumentCommand", () => {
     if (changed?.type !== "image") throw new Error("expected image layer");
     expect(changed.transform).toEqual({ x: 0, y: 0, scale: 2, rotation: 0 });
   });
+
+  it("fits an image and resolves semantic layer edits", () => {
+    const scene = parseScene({
+      canvas: { width: 800, height: 400 },
+      layers: [{ id: "photo", type: "image", source: "photo.png" }],
+    });
+    const fitted = applyDocumentCommand(scene, {
+      kind: "fit-layer",
+      layerId: "photo",
+      mode: "fit",
+      percent: 50,
+      anchor: "bottom-right",
+      naturalSize: { width: 400, height: 200 },
+    }).scene;
+    const edited = applyDocumentCommand(fitted, {
+      kind: "edit-layer",
+      layerId: "photo",
+      opacity: 0.6,
+      shadow: { blur: 8 },
+      adjust: { warmth: 25 },
+    }).scene;
+    const changed = edited.layers[0];
+    if (changed?.type !== "image") throw new Error("expected image layer");
+    expect(changed.transform).toEqual({ x: 400, y: 200, scale: 1, rotation: 0 });
+    expect(changed).toMatchObject({
+      opacity: 0.6,
+      shadow: { color: "#00000080", dx: 12, dy: 16, blur: 8 },
+      adjust: { warmth: 25, exposure: 0, sharpen: 0 },
+    });
+  });
+
+  it("reorders a layer by paint index", () => {
+    const scene = parseScene({
+      canvas: { width: 100, height: 100 },
+      layers: [
+        { id: "back", type: "shape", shape: "rect", rect: { w: 1, h: 1 } },
+        { id: "middle", type: "shape", shape: "rect", rect: { w: 1, h: 1 } },
+        { id: "front", type: "shape", shape: "rect", rect: { w: 1, h: 1 } },
+      ],
+    });
+    const result = applyDocumentCommand(scene, {
+      kind: "reorder-layer",
+      layerId: "back",
+      index: 2,
+    });
+    expect(result.scene.layers.map((layer) => layer.id)).toEqual(["middle", "front", "back"]);
+  });
 });

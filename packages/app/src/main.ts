@@ -41,6 +41,32 @@ const COMMAND_TIMEOUT_MS = 30_000;
 const BACKGROUND_TIMEOUT_MS = 5 * 60_000;
 const U2NET_MODEL_PATH = path.join(homedir(), ".u2net", "u2net.onnx");
 const U2NET_MODEL_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx";
+const BLEND_MODES = [
+  "normal",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color-dodge",
+  "color-burn",
+  "hard-light",
+  "soft-light",
+  "difference",
+  "exclusion",
+  "add",
+] as const;
+const ANCHORS = [
+  "top-left",
+  "top",
+  "top-right",
+  "left",
+  "center",
+  "right",
+  "bottom-left",
+  "bottom",
+  "bottom-right",
+] as const;
 let modelDownload: Promise<string> | null = null;
 
 interface OpenDocument {
@@ -481,15 +507,111 @@ function createMcpServer(): McpServer {
       },
     },
     async ({ layerId, dx, dy, drot, scale }) => {
-      const command: DocumentCommand = {
+      const command = {
         kind: "transform-layer",
         layerId,
         ...(dx === undefined ? {} : { dx }),
         ...(dy === undefined ? {} : { dy }),
         ...(drot === undefined ? {} : { drot }),
         ...(scale === undefined ? {} : { scale }),
-      };
+      } as DocumentCommand;
       const response = await sendRendererRequest({ kind: "apply-command", command });
+      return toolText({ revision: document.revision, receipt: response.receipt });
+    },
+  );
+
+  server.registerTool(
+    "fit_layer",
+    {
+      description:
+        "Fit, fill, or cover the canvas with an image layer at a percentage and anchor. The browser resolves the image dimensions and exact placement.",
+      inputSchema: {
+        layerId: z.string(),
+        mode: z.enum(["fit", "fill", "cover"]).default("fit"),
+        percent: z.number().positive().default(100),
+        anchor: z.enum(ANCHORS).default("center"),
+      },
+    },
+    async ({ layerId, mode, percent, anchor }) => {
+      const response = await sendRendererRequest({
+        kind: "apply-command",
+        command: { kind: "fit-layer", layerId, mode, percent, anchor },
+      });
+      return toolText({ revision: document.revision, receipt: response.receipt });
+    },
+  );
+
+  server.registerTool(
+    "edit_layer",
+    {
+      description:
+        "Edit common visual properties on one layer. Omitted properties stay unchanged; null removes blur, shadow, or adjustments.",
+      inputSchema: {
+        layerId: z.string(),
+        name: z.string().optional(),
+        opacity: z.number().min(0).max(1).optional(),
+        visible: z.boolean().optional(),
+        blend: z.enum(BLEND_MODES).optional(),
+        blur: z.number().nonnegative().nullable().optional(),
+        shadow: z
+          .object({
+            color: z.string().optional(),
+            dx: z.number().optional(),
+            dy: z.number().optional(),
+            blur: z.number().nonnegative().optional(),
+          })
+          .nullable()
+          .optional(),
+        adjust: z
+          .object({
+            brightness: z.number().min(-100).max(100).optional(),
+            contrast: z.number().min(-100).max(100).optional(),
+            saturation: z.number().min(-100).max(100).optional(),
+            exposure: z.number().min(-100).max(100).optional(),
+            warmth: z.number().min(-100).max(100).optional(),
+            hue: z.number().min(-180).max(180).optional(),
+            shadows: z.number().min(-100).max(100).optional(),
+            highlights: z.number().min(-100).max(100).optional(),
+            clarity: z.number().min(0).max(100).optional(),
+            sharpen: z.number().min(0).max(100).optional(),
+          })
+          .nullable()
+          .optional(),
+        adjustEnabled: z.boolean().optional(),
+      },
+    },
+    async ({ layerId, ...patch }) => {
+      const command = {
+        kind: "edit-layer",
+        layerId,
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.opacity === undefined ? {} : { opacity: patch.opacity }),
+        ...(patch.visible === undefined ? {} : { visible: patch.visible }),
+        ...(patch.blend === undefined ? {} : { blend: patch.blend }),
+        ...(patch.blur === undefined ? {} : { blur: patch.blur }),
+        ...(patch.shadow === undefined ? {} : { shadow: patch.shadow }),
+        ...(patch.adjust === undefined ? {} : { adjust: patch.adjust }),
+        ...(patch.adjustEnabled === undefined ? {} : { adjustEnabled: patch.adjustEnabled }),
+      } as DocumentCommand;
+      const response = await sendRendererRequest({
+        kind: "apply-command",
+        command,
+      });
+      return toolText({ revision: document.revision, receipt: response.receipt });
+    },
+  );
+
+  server.registerTool(
+    "reorder_layer",
+    {
+      description: "Move a layer to an absolute paint-order index (0 is the back/bottom).",
+      inputSchema: { layerId: z.string(), index: z.number().int().nonnegative() },
+    },
+    async ({ layerId, index }) => {
+      const response = await sendRendererRequest({
+        kind: "apply-command",
+        command: { kind: "reorder-layer", layerId, index },
+      });
       return toolText({ revision: document.revision, receipt: response.receipt });
     },
   );
