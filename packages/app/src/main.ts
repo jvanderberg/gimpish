@@ -12,7 +12,14 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { app, BrowserWindow, ipcMain } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
+} from "electron";
 import { z } from "zod";
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
@@ -137,6 +144,25 @@ function registerIpc(): void {
     revision: document.revision,
   }));
 
+  ipcMain.handle("document:open", async () => {
+    const options: OpenDialogOptions = {
+      title: "Open Gimpish scene",
+      properties: ["openFile"],
+      filters: [
+        { name: "Gimpish scene", extensions: ["json"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    const selected = result.filePaths[0];
+    if (result.canceled || !selected) return null;
+    document = loadDocument(selected);
+    win?.setTitle(`Gimpish — ${path.basename(path.dirname(document.path))}`);
+    return { path: document.path, scene: document.scene, revision: document.revision };
+  });
+
   ipcMain.handle("document:persist", (_event, scene: unknown) => {
     const saved = persistScene(scene);
     return { revision: saved.revision };
@@ -145,7 +171,12 @@ function registerIpc(): void {
   ipcMain.handle("asset:read", (_event, storedPath: string) => {
     if (typeof storedPath !== "string" || storedPath.length === 0)
       throw new Error("invalid asset path");
-    const resolved = path.resolve(path.dirname(document.path), storedPath);
+    const documentRoot = path.dirname(document.path);
+    const resolved = path.resolve(documentRoot, storedPath);
+    const relative = path.relative(documentRoot, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error("asset path escapes the document directory");
+    }
     const bytes = readFileSync(resolved);
     const ext = path.extname(resolved).toLowerCase();
     const mimeType =
@@ -155,6 +186,52 @@ function registerIpc(): void {
           ? "image/webp"
           : "image/png";
     return { mimeType, data: bytes.toString("base64") };
+  });
+
+  ipcMain.handle("asset:import", (_event, name: unknown, data: unknown) => {
+    if (typeof name !== "string" || typeof data !== "string") throw new Error("invalid asset");
+    const extension = path.extname(name).toLowerCase();
+    if (![".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
+      throw new Error(`unsupported image type: ${extension || "none"}`);
+    }
+    const bytes = Buffer.from(data, "base64");
+    if (bytes.length === 0 || bytes.length > 100 * 1024 * 1024) {
+      throw new Error("image must be between 1 byte and 100 MB");
+    }
+    const assets = path.join(path.dirname(document.path), "assets");
+    mkdirSync(assets, { recursive: true });
+    const stem =
+      path
+        .basename(name, extension)
+        .replace(/[^a-zA-Z0-9_-]+/g, "-")
+        .replace(/^-|-$/g, "") || "image";
+    let filename = `${stem}${extension}`;
+    let suffix = 2;
+    while (existsSync(path.join(assets, filename))) {
+      filename = `${stem}-${suffix}${extension}`;
+      suffix += 1;
+    }
+    writeFileSync(path.join(assets, filename), bytes);
+    return { path: `assets/${filename}` };
+  });
+
+  ipcMain.handle("export:save", async (_event, data: unknown, suggestedName: unknown) => {
+    if (typeof data !== "string") throw new Error("invalid export data");
+    const safeName =
+      typeof suggestedName === "string" && suggestedName.trim()
+        ? path.basename(suggestedName)
+        : `${path.basename(path.dirname(document.path))}.png`;
+    const options: SaveDialogOptions = {
+      title: "Export PNG",
+      defaultPath: path.join(path.dirname(document.path), safeName),
+      filters: [{ name: "PNG image", extensions: ["png"] }],
+    };
+    const result = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    writeFileSync(result.filePath, Buffer.from(data, "base64"));
+    return { path: result.filePath };
   });
 
   ipcMain.handle("document:command-result", (_event, raw: unknown) => {

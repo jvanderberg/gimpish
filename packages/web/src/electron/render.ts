@@ -5,6 +5,23 @@ import type { GimpishElectronApi } from "./api";
 const imageCache = new Map<string, Promise<ImageBitmap>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
 
+export function clearRendererCaches(): void {
+  for (const pending of imageCache.values()) {
+    void pending.then(
+      (image) => image.close(),
+      () => undefined,
+    );
+  }
+  for (const pending of maskedImageCache.values()) {
+    void pending.then(
+      (image) => image.close(),
+      () => undefined,
+    );
+  }
+  imageCache.clear();
+  maskedImageCache.clear();
+}
+
 function cssColor(color: string): string {
   if (color === "transparent") return "rgba(0,0,0,0)";
   const [r, g, b, a] = parseColor(color);

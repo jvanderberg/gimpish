@@ -27,7 +27,10 @@ export interface RendererResponse {
 
 export interface GimpishElectronApi {
   loadDocument(): Promise<DocumentSnapshot>;
+  openDocument(): Promise<DocumentSnapshot | null>;
   persistScene(scene: Scene): Promise<{ revision: number }>;
+  saveExport(data: string, suggestedName: string): Promise<{ path: string } | null>;
+  importAsset(name: string, data: string): Promise<{ path: string }>;
   readAsset(path: string): Promise<{ mimeType: string; data: string }>;
   onCommand(callback: (request: RendererRequest) => void): () => void;
   completeCommand(response: RendererResponse): Promise<{ accepted: boolean; revision?: number }>;
