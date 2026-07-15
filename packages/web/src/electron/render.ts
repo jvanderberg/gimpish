@@ -7,10 +7,12 @@ import {
   type Mask,
   parseColor,
 } from "@gimpish/core/model";
+import { applyBrowserAdjustments, isBrowserAdjustNeutral } from "./adjust";
 import type { GimpishElectronApi } from "./api";
 
 const imageCache = new Map<string, Promise<ImageBitmap>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
+const adjustedLayerCache = new Map<string, Promise<ImageBitmap>>();
 
 export function clearRendererCaches(): void {
   for (const pending of imageCache.values()) {
@@ -25,8 +27,15 @@ export function clearRendererCaches(): void {
       () => undefined,
     );
   }
+  for (const pending of adjustedLayerCache.values()) {
+    void pending.then(
+      (image) => image.close(),
+      () => undefined,
+    );
+  }
   imageCache.clear();
   maskedImageCache.clear();
+  adjustedLayerCache.clear();
 }
 
 function cssColor(color: string): string {
@@ -199,13 +208,6 @@ function setLayerEffects(
   ctx.globalCompositeOperation = blendMode(layer);
   const filters: string[] = [];
   if (layer.blur && layer.blur > 0) filters.push(`blur(${layer.blur}px)`);
-  if (layer.adjust && layer.adjustEnabled !== false) {
-    const a = layer.adjust;
-    if (a.brightness) filters.push(`brightness(${100 + a.brightness}%)`);
-    if (a.contrast) filters.push(`contrast(${100 + a.contrast}%)`);
-    if (a.saturation) filters.push(`saturate(${100 + a.saturation}%)`);
-    if (a.hue) filters.push(`hue-rotate(${a.hue}deg)`);
-  }
   ctx.filter = filters.join(" ") || "none";
   if (layer.shadow) {
     ctx.shadowColor = cssColor(layer.shadow.color);
@@ -284,15 +286,12 @@ function drawArrow(
   paint(a.color, 0);
 }
 
-async function drawLayer(
+async function drawLayerContent(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   scene: Scene,
   layer: Layer,
   api: GimpishElectronApi,
 ): Promise<void> {
-  if (!layer.visible) return;
-  ctx.save();
-  setLayerEffects(ctx, layer);
   switch (layer.type) {
     case "image": {
       const image = await imageForLayer(api, layer);
@@ -332,6 +331,50 @@ async function drawLayer(
     case "text":
       drawText(ctx, scene, layer);
       break;
+  }
+}
+
+async function drawLayer(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  scene: Scene,
+  layer: Layer,
+  api: GimpishElectronApi,
+): Promise<void> {
+  if (!layer.visible) return;
+  ctx.save();
+  setLayerEffects(ctx, layer);
+  const adjust = layer.adjustEnabled === false ? undefined : layer.adjust;
+  if (adjust && !isBrowserAdjustNeutral(adjust)) {
+    const key = `${scene.canvas.width}x${scene.canvas.height}\u0000${JSON.stringify(layer)}`;
+    let pending = adjustedLayerCache.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const surface = new OffscreenCanvas(scene.canvas.width, scene.canvas.height);
+        const surfaceCtx = surface.getContext("2d", { willReadFrequently: true });
+        if (!surfaceCtx) throw new Error("2D canvas is unavailable");
+        await drawLayerContent(surfaceCtx, scene, layer, api);
+        const pixels = surfaceCtx.getImageData(0, 0, surface.width, surface.height);
+        applyBrowserAdjustments(pixels.data, pixels.width, pixels.height, adjust);
+        surfaceCtx.putImageData(pixels, 0, 0);
+        return createImageBitmap(surface);
+      })();
+      adjustedLayerCache.set(key, pending);
+      if (adjustedLayerCache.size > 12) {
+        const oldest = adjustedLayerCache.entries().next().value as
+          | [string, Promise<ImageBitmap>]
+          | undefined;
+        if (oldest) {
+          adjustedLayerCache.delete(oldest[0]);
+          void oldest[1].then(
+            (image) => image.close(),
+            () => undefined,
+          );
+        }
+      }
+    }
+    ctx.drawImage(await pending, 0, 0);
+  } else {
+    await drawLayerContent(ctx, scene, layer, api);
   }
   ctx.restore();
 }
