@@ -1,7 +1,15 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import type { Canvas, ExportSettings, SceneDoc } from "../src/index.ts";
-import { clampCrop, coverCrop, parseScene, renderExport, resolveExportCrop } from "../src/index.ts";
+import {
+  clampCrop,
+  coverCrop,
+  EXPORT_PRESETS,
+  isExportPreset,
+  parseScene,
+  renderExport,
+  resolveExportCrop,
+} from "../src/index.ts";
 
 const CANVAS: Canvas = { width: 2000, height: 1000, background: "#3355aaff" };
 
@@ -26,6 +34,16 @@ function boxScene(): SceneDoc {
     }),
   };
 }
+
+describe("EXPORT_PRESETS", () => {
+  it("includes high-resolution screen and print targets", () => {
+    expect(EXPORT_PRESETS["square-2x"]).toMatchObject({ width: 2160, height: 2160 });
+    expect(EXPORT_PRESETS["4k"]).toMatchObject({ width: 3840, height: 2160 });
+    expect(EXPORT_PRESETS["print-12x9"]).toMatchObject({ width: 3600, height: 2700 });
+    expect(EXPORT_PRESETS["print-16x12"]).toMatchObject({ width: 4800, height: 3600 });
+    expect(isExportPreset("print-16x12")).toBe(true);
+  });
+});
 
 describe("coverCrop", () => {
   it("fills full height when the target is narrower than the canvas", () => {

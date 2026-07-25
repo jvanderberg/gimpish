@@ -17,6 +17,10 @@ export const EXPORT_PRESETS = {
   "instagram-portrait": { label: "Instagram portrait 1080×1350", width: 1080, height: 1350 },
   story: { label: "Story / TikTok 1080×1920", width: 1080, height: 1920 },
   x: { label: "X 1600×900", width: 1600, height: 900 },
+  "square-2x": { label: "Square 2× 2160×2160", width: 2160, height: 2160 },
+  "4k": { label: "4K 3840×2160", width: 3840, height: 2160 },
+  "print-12x9": { label: "Print 12×9 in · 300 DPI 3600×2700", width: 3600, height: 2700 },
+  "print-16x12": { label: "Print 16×12 in · 300 DPI 4800×3600", width: 4800, height: 3600 },
 } as const;
 
 export type ExportPreset = keyof typeof EXPORT_PRESETS;

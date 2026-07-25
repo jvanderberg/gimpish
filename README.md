@@ -111,7 +111,8 @@ when it restarts. Endpoints: `POST /api/undo`, `POST /api/redo`,
 
 ### Import (drag-and-drop / upload)
 
-Drop image files anywhere on the stage (or use the **Import** button). Each
+Drop PNG, JPEG, WebP, or SVG image files anywhere on the stage (or use the
+**Import** button). Each
 image is saved as `assets/<slugged-name>.<ext>` next to the scene file and
 added as a top layer, scaled down to fit the canvas and centered. The toast
 shows the resulting handle — e.g. `added layer 'team-photo' —

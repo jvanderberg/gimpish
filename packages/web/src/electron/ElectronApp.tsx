@@ -2,6 +2,7 @@ import {
   applyDocumentCommand,
   type DocumentCommand,
   type EditReceipt,
+  type ExportSettings,
   findLayer,
   type LayerBox,
   layerBox,
@@ -14,6 +15,7 @@ import {
   uniqueId,
 } from "@gimpish/core/model";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExportModal, type ExportModalRuntime } from "../components/ExportModal";
 import {
   ICON_DOWNLOAD,
   ICON_IMPORT,
@@ -26,7 +28,12 @@ import { useElementSize } from "../hooks/useElementSize";
 import { containBox, preferredHitTest } from "../lib/geometry";
 import { electronApi, type RendererRequest, type RendererResponse } from "./api";
 import { removeBackgroundInWorker } from "./background-worker-client";
-import { clearRendererCaches, imageNaturalSize, renderScene } from "./render";
+import {
+  clearRendererCaches,
+  imageNaturalSize,
+  renderScene,
+  sceneRendersResolutionIndependently,
+} from "./render";
 import { canvasFontFamily } from "./vector";
 
 interface Point {
@@ -239,12 +246,24 @@ export function ElectronApp() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPreviewSrc, setExportPreviewSrc] = useState<string | null>(null);
+  const exportPreviewUrl = useRef<string | null>(null);
   const [dropActive, setDropActive] = useState(false);
   const [zoom, setZoom] = useState(1);
   const { ref: canvasWrapRef, size: availableCanvas } = useElementSize<HTMLDivElement>();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const renderGeneration = useRef(0);
+
+  const closeExport = useCallback(() => {
+    setExportOpen(false);
+    setExportPreviewSrc(null);
+    if (exportPreviewUrl.current) URL.revokeObjectURL(exportPreviewUrl.current);
+    exportPreviewUrl.current = null;
+  }, []);
+
+  useEffect(() => closeExport, [closeExport]);
 
   const stepZoom = useCallback((direction: number) => {
     setZoom((current) => {
@@ -688,49 +707,87 @@ export function ElectronApp() {
       .catch((cause: unknown) => setError(errorMessage(cause)));
   }, [acceptSnapshot, api]);
 
-  const saveBundle = useCallback(() => {
+  const saveBundle = useCallback(async () => {
     setNotice(null);
-    void api
-      .saveBundle()
-      .then((saved) => {
-        if (saved) setNotice(`Saved ${saved.path}`);
-      })
-      .catch((cause: unknown) => setError(errorMessage(cause)));
+    const saved = await api.saveBundle();
+    if (saved) setNotice(`Saved ${saved.path}`);
   }, [api]);
 
-  const exportDocument = useCallback(() => {
-    const current = sceneRef.current;
-    if (!current || exporting) return;
-    setExporting(true);
-    setNotice(null);
-    void (async () => {
-      const width = current.export?.width ?? current.canvas.width;
-      const height = current.export?.height ?? current.canvas.height;
-      const format = current.export?.format ?? "png";
+  const saveExportSettings = useCallback(
+    async (settings: ExportSettings) => {
+      const current = sceneRef.current;
+      if (!current) throw new Error("document is not loaded");
+      const next = parseScene({ ...structuredClone(current), export: settings });
+      recordBefore(current);
+      sceneRef.current = next;
+      setScene(next);
+      await persist(next);
+      setNotice("Saved export settings");
+    },
+    [persist, recordBefore],
+  );
+
+  const exportDocument = useCallback(
+    async (settings: ExportSettings) => {
+      const current = sceneRef.current;
+      if (!current) throw new Error("document is not loaded");
+      const format = settings.format;
       const mimeType =
         format === "jpg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
-      const output = new OffscreenCanvas(width, height);
-      const crop = current.export ? resolveExportCrop(current.canvas, current.export) : undefined;
-      await renderScene(output, current, api, width, height, crop);
+      const output = new OffscreenCanvas(settings.width, settings.height);
+      const crop = resolveExportCrop(current.canvas, settings);
+      await renderScene(output, current, api, settings.width, settings.height, crop);
       const blob = await output.convertToBlob({
         type: mimeType,
-        quality: (current.export?.quality ?? 90) / 100,
+        quality: settings.quality / 100,
       });
       const data = await blobToBase64(blob);
       const base = path.split(/[\\/]/).at(-2) || "gimpish";
       const extension = format === "jpg" ? "jpg" : format;
       const saved = await api.saveExport(data, `${base}.${extension}`, mimeType);
       if (saved) setNotice(`Exported ${saved.path}`);
+    },
+    [api, path],
+  );
+
+  const openExport = useCallback(() => {
+    const current = sceneRef.current;
+    if (!current || exporting) return;
+    setExporting(true);
+    setNotice(null);
+    void (async () => {
+      const preview = new OffscreenCanvas(current.canvas.width, current.canvas.height);
+      await renderScene(preview, current, api);
+      const blob = await preview.convertToBlob({ type: "image/png" });
+      if (exportPreviewUrl.current) URL.revokeObjectURL(exportPreviewUrl.current);
+      const url = URL.createObjectURL(blob);
+      exportPreviewUrl.current = url;
+      setExportPreviewSrc(url);
+      setExportOpen(true);
     })()
       .catch((cause: unknown) => setError(errorMessage(cause)))
       .finally(() => setExporting(false));
-  }, [api, exporting, path]);
+  }, [api, exporting]);
+
+  const exportRuntime = useMemo<ExportModalRuntime | null>(
+    () =>
+      exportPreviewSrc
+        ? {
+            previewSrc: exportPreviewSrc,
+            resolutionIndependent: scene ? sceneRendersResolutionIndependently(scene) : false,
+            saveSettings: saveExportSettings,
+            download: exportDocument,
+            saveBundle,
+          }
+        : null,
+    [exportDocument, exportPreviewSrc, saveBundle, saveExportSettings, scene],
+  );
 
   const importFiles = useCallback(
     (files: FileList | File[]) => {
       void (async () => {
         for (const file of Array.from(files)) {
-          if (!file.type.startsWith("image/") && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
+          if (!file.type.startsWith("image/") && !/\.(png|jpe?g|svg|webp)$/i.test(file.name)) {
             throw new Error(`${file.name} is not a supported image`);
           }
           const uploaded = await api.importAsset(file.name, await blobToBase64(file));
@@ -902,7 +959,12 @@ export function ElectronApp() {
             >
               {ICON_IMPORT}
             </button>
-            <button className="btn" type="button" disabled={!scene} onClick={saveBundle}>
+            <button
+              className="btn"
+              type="button"
+              disabled={!scene}
+              onClick={() => void saveBundle().catch((cause) => setError(errorMessage(cause)))}
+            >
               Save Bundle…
             </button>
             <button
@@ -911,7 +973,7 @@ export function ElectronApp() {
               title="Export"
               aria-label="Export"
               disabled={!scene || exporting}
-              onClick={exportDocument}
+              onClick={openExport}
             >
               {ICON_DOWNLOAD}
             </button>
@@ -975,6 +1037,15 @@ export function ElectronApp() {
         err={error}
         selLayer={selectedLayer}
       />
+      {exportOpen && scene && exportRuntime ? (
+        <ExportModal
+          canvas={scene.canvas}
+          scene={scene}
+          ts={revision}
+          onClose={closeExport}
+          runtime={exportRuntime}
+        />
+      ) : null}
     </div>
   );
 }

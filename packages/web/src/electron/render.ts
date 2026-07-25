@@ -14,7 +14,9 @@ import { applyAdjustmentsInWorker } from "./adjust-worker-client";
 import type { GimpishElectronApi } from "./api";
 import { canvasFontFamily, premultiplyBlendPixels } from "./vector";
 
-const imageCache = new Map<string, Promise<ImageBitmap>>();
+type RenderableImage = ImageBitmap | HTMLImageElement;
+
+const imageCache = new Map<string, Promise<RenderableImage>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
 const adjustedLayerCache = new Map<string, Promise<ImageBitmap>>();
 const blendedLayerCache = new Map<string, Promise<ImageBitmap>>();
@@ -22,7 +24,9 @@ const blendedLayerCache = new Map<string, Promise<ImageBitmap>>();
 export function clearRendererCaches(): void {
   for (const pending of imageCache.values()) {
     void pending.then(
-      (image) => image.close(),
+      (image) => {
+        if (image instanceof ImageBitmap) image.close();
+      },
       () => undefined,
     );
   }
@@ -56,14 +60,34 @@ function cssColor(color: string): string {
   return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
 }
 
-async function loadImage(api: GimpishElectronApi, storedPath: string): Promise<ImageBitmap> {
+async function svgImage(blob: Blob): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = url;
+    await image.decode();
+    if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) {
+      throw new Error("SVG has no renderable intrinsic size");
+    }
+    // Retain the decoded SVG as a vector-capable image source. Chromium then
+    // rasterizes it directly at the destination canvas's export resolution.
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function loadImage(api: GimpishElectronApi, storedPath: string): Promise<RenderableImage> {
   let pending = imageCache.get(storedPath);
   if (!pending) {
     pending = api.readAsset(storedPath).then(async ({ mimeType, data }) => {
       const binary = atob(data);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-      return createImageBitmap(new Blob([bytes], { type: mimeType }), {
+      const blob = new Blob([bytes], { type: mimeType });
+      if (mimeType === "image/svg+xml") return svgImage(blob);
+      return createImageBitmap(blob, {
         imageOrientation: "from-image",
       });
     });
@@ -146,7 +170,7 @@ async function makeMaskCanvas(
   return feathered;
 }
 
-async function imageForLayer(api: GimpishElectronApi, layer: ImageLayer): Promise<ImageBitmap> {
+async function imageForLayer(api: GimpishElectronApi, layer: ImageLayer): Promise<RenderableImage> {
   const source = await loadImage(api, layer.source);
   const layerMask = layer.mask;
   if (!layerMask) return source;
@@ -468,10 +492,26 @@ export async function renderScene(
   ctx.restore();
 }
 
+export function sceneRendersResolutionIndependently(scene: Scene): boolean {
+  return scene.layers
+    .filter((layer) => layer.visible)
+    .every((layer) => {
+      if (layer.blend !== "normal") return false;
+      if (layer.adjustEnabled !== false && layer.adjust && !isBrowserAdjustNeutral(layer.adjust)) {
+        return false;
+      }
+      if (layer.type !== "image") return true;
+      return !layer.mask && /\.svg(?:$|[?#])/i.test(layer.source);
+    });
+}
+
 export async function imageNaturalSize(
   api: GimpishElectronApi,
   storedPath: string,
 ): Promise<{ width: number; height: number }> {
   const image = await loadImage(api, storedPath);
-  return { width: image.width, height: image.height };
+  return {
+    width: image instanceof HTMLImageElement ? image.naturalWidth : image.width,
+    height: image instanceof HTMLImageElement ? image.naturalHeight : image.height,
+  };
 }

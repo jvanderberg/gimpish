@@ -34,6 +34,7 @@ import {
   type SaveDialogOptions,
 } from "electron";
 import { z } from "zod";
+import { assetMimeType, isSupportedImageExtension } from "./assets.ts";
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const MCP_PORT = 8767;
@@ -333,20 +334,13 @@ function registerIpc(): void {
     }
     const resolved = path.resolve(path.dirname(document.path), storedPath);
     const bytes = readFileSync(resolved);
-    const ext = path.extname(resolved).toLowerCase();
-    const mimeType =
-      ext === ".jpg" || ext === ".jpeg"
-        ? "image/jpeg"
-        : ext === ".webp"
-          ? "image/webp"
-          : "image/png";
-    return { mimeType, data: bytes.toString("base64") };
+    return { mimeType: assetMimeType(resolved), data: bytes.toString("base64") };
   });
 
   ipcMain.handle("asset:import", (_event, name: unknown, data: unknown) => {
     if (typeof name !== "string" || typeof data !== "string") throw new Error("invalid asset");
     const extension = path.extname(name).toLowerCase();
-    if (![".png", ".jpg", ".jpeg", ".webp"].includes(extension)) {
+    if (!isSupportedImageExtension(extension)) {
       throw new Error(`unsupported image type: ${extension || "none"}`);
     }
     const bytes = Buffer.from(data, "base64");

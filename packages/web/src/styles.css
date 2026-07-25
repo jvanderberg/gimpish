@@ -943,11 +943,23 @@ body {
 }
 
 .export-bundle {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   color: var(--dim);
   text-align: center;
+  cursor: pointer;
 }
 
 .export-bundle:hover {
   color: var(--accent);
+}
+
+.export-bundle:disabled {
+  cursor: default;
+  opacity: 0.55;
 }

@@ -1,9 +1,11 @@
 import {
   arrowPolygonPoints,
   linearGradientGeometry,
+  parseScene,
   radialGradientGeometry,
 } from "@gimpish/core/model";
 import { describe, expect, it } from "vitest";
+import { sceneRendersResolutionIndependently } from "../src/electron/render";
 import { canvasFontFamily, premultiplyBlendPixels } from "../src/electron/vector";
 
 describe("browser vector parity", () => {
@@ -48,5 +50,25 @@ describe("browser vector parity", () => {
     const pixels = new Uint8ClampedArray([43, 182, 115, 112, 200, 100, 50, 0]);
     premultiplyBlendPixels(pixels, 0.85);
     expect([...pixels]).toEqual([16, 68, 43, 95, 0, 0, 0, 0]);
+  });
+
+  it("recognizes vector-only scenes without counting hidden raster references", () => {
+    const scene = parseScene({
+      canvas: { width: 2000, height: 1500, background: "transparent" },
+      layers: [
+        { id: "reference", type: "image", source: "shirt.jpeg", visible: false },
+        { id: "tree", type: "image", source: "tree.svg" },
+        { id: "initials", type: "text", text: { content: "MSR", x: 100, y: 100 } },
+      ],
+    });
+    expect(sceneRendersResolutionIndependently(scene)).toBe(true);
+  });
+
+  it("flags visible raster layers as resolution-dependent", () => {
+    const scene = parseScene({
+      canvas: { width: 2000, height: 1500, background: "transparent" },
+      layers: [{ id: "photo", type: "image", source: "shirt.jpeg" }],
+    });
+    expect(sceneRendersResolutionIndependently(scene)).toBe(false);
   });
 });

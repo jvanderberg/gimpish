@@ -11,6 +11,7 @@ import {
   type Canvas,
   type ExportCrop,
   type ExportFormat,
+  type ExportSettings,
   exportCropUrl,
   previewUrl,
   type Scene,
@@ -24,6 +25,22 @@ const PRESET_KEYS = Object.keys(EXPORT_PRESETS) as (keyof typeof EXPORT_PRESETS)
 const MIN_CROP = 16; // canvas px, so a crop never collapses
 
 type Corner = "nw" | "ne" | "se" | "sw";
+
+function sameAspect(sourceWidth: number, sourceHeight: number, width: number, height: number) {
+  return Math.abs(sourceWidth / sourceHeight - width / height) < 0.000_001;
+}
+
+function isFullCanvasCrop(crop: ExportCrop, width: number, height: number) {
+  return crop.x === 0 && crop.y === 0 && crop.w === width && crop.h === height;
+}
+
+export interface ExportModalRuntime {
+  previewSrc: string;
+  resolutionIndependent: boolean;
+  saveSettings(settings: ExportSettings): Promise<void>;
+  download(settings: ExportSettings): Promise<void>;
+  saveBundle(): Promise<void>;
+}
 
 /** Re-fit a crop to a new aspect, keeping its center where possible. */
 function reAspectCrop(
@@ -54,26 +71,36 @@ export function ExportModal({
   scene,
   ts,
   onClose,
+  runtime,
 }: {
   canvas: Canvas;
   scene: Scene | null;
   ts: number;
   onClose: () => void;
+  runtime?: ExportModalRuntime;
 }) {
   const cw = canvas.width;
   const ch = canvas.height;
   const initial = scene?.export ?? null;
+  const initialWidth = initial?.width ?? EXPORT_PRESETS.youtube.width;
+  const initialHeight = initial?.height ?? EXPORT_PRESETS.youtube.height;
+  const initialCrop = initial?.crop
+    ? clampCrop(initial.crop, cw, ch)
+    : coverCrop(cw, ch, initialWidth, initialHeight);
+  const initialCropIsFullCanvas = isFullCanvasCrop(initialCrop, cw, ch);
 
   const [format, setFormat] = useState<ExportFormat>(initial?.format ?? "png");
   const [preset, setPreset] = useState<string>(initial?.preset ?? "youtube");
-  const [width, setWidth] = useState<number>(initial?.width ?? EXPORT_PRESETS.youtube.width);
-  const [height, setHeight] = useState<number>(initial?.height ?? EXPORT_PRESETS.youtube.height);
-  const [crop, setCrop] = useState<ExportCrop>(
-    initial?.crop
-      ? clampCrop(initial.crop, cw, ch)
-      : coverCrop(cw, ch, initial?.width ?? width, initial?.height ?? height),
+  const [width, setWidth] = useState<number>(initialWidth);
+  const [height, setHeight] = useState<number>(initialHeight);
+  const [crop, setCrop] = useState<ExportCrop>(initialCrop);
+  const [cropEnabled, setCropEnabled] = useState(
+    !sameAspect(cw, ch, initialWidth, initialHeight) ||
+      Boolean(initial?.crop && !initialCropIsFullCanvas),
   );
   const [saved, setSaved] = useState(false);
+  const [working, setWorking] = useState<"download" | "bundle" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { ref: stageRef, size: avail } = useElementSize<HTMLDivElement>();
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -93,11 +120,15 @@ export function ExportModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function applyTarget(w: number, h: number, presetKey: string) {
+  function applyTarget(w: number, h: number, presetKey: string, resetCrop = false) {
+    const cropRequired = !sameAspect(cw, ch, w, h);
     setWidth(w);
     setHeight(h);
     setPreset(presetKey);
-    setCrop((prev) => reAspectCrop(prev, cw, ch, w, h));
+    setCropEnabled(cropRequired);
+    setCrop((prev) =>
+      resetCrop || !cropRequired ? coverCrop(cw, ch, w, h) : reAspectCrop(prev, cw, ch, w, h),
+    );
     setSaved(false);
   }
 
@@ -107,7 +138,7 @@ export function ExportModal({
       return;
     }
     const p = EXPORT_PRESETS[key as keyof typeof EXPORT_PRESETS];
-    applyTarget(p.width, p.height, key);
+    applyTarget(p.width, p.height, key, true);
   }
 
   function onDim(which: "w" | "h", value: number) {
@@ -142,7 +173,13 @@ export function ExportModal({
     if (d.mode === "move") {
       const dx = (e.clientX - d.sx) / scale;
       const dy = (e.clientY - d.sy) / scale;
-      setCrop(clampCrop({ x: d.orig.x + dx, y: d.orig.y + dy, w: d.orig.w, h: d.orig.h }, cw, ch));
+      const next = clampCrop(
+        { x: d.orig.x + dx, y: d.orig.y + dy, w: d.orig.w, h: d.orig.h },
+        cw,
+        ch,
+      );
+      setCrop(next);
+      setCropEnabled(!isFullCanvasCrop(next, cw, ch));
       return;
     }
     // Corner resize: the opposite corner is the fixed anchor; keep aspect.
@@ -158,12 +195,14 @@ export function ExportModal({
     const maxH = dirY > 0 ? ch - anchorY : anchorY;
     w = Math.max(MIN_CROP, Math.min(w, maxW, maxH * aspect));
     const h = w / aspect;
-    setCrop({
+    const next = {
       x: dirX > 0 ? anchorX : anchorX - w,
       y: dirY > 0 ? anchorY : anchorY - h,
       w,
       h,
-    });
+    };
+    setCrop(next);
+    setCropEnabled(!isFullCanvasCrop(next, cw, ch));
   }
 
   function endDrag(e: ReactPointerEvent) {
@@ -175,23 +214,57 @@ export function ExportModal({
 
   // ---- readouts -----------------------------------------------------------------
 
-  const outScale = crop.w > 0 ? width / crop.w : 1;
-  const upscaling = outScale > 1.02;
+  const sourceWidth = cropEnabled ? crop.w : cw;
+  const outScale = sourceWidth > 0 ? width / sourceWidth : 1;
+  const resolutionIndependent = runtime?.resolutionIndependent ?? false;
+  const upscaling = !resolutionIndependent && outScale > 1.02;
   const roundedCrop = useMemo(() => clampCrop(crop, cw, ch), [crop, cw, ch]);
+
+  function settings(): ExportSettings {
+    return {
+      width: Math.round(width),
+      height: Math.round(height),
+      format,
+      quality: initial?.quality ?? 90,
+      crop: cropEnabled ? roundedCrop : null,
+      preset: preset === "custom" ? null : preset,
+    };
+  }
 
   async function onSave() {
     try {
-      await saveExportSettings({
-        width: Math.round(width),
-        height: Math.round(height),
-        format,
-        quality: initial?.quality ?? 90,
-        crop: roundedCrop,
-        preset: preset === "custom" ? null : preset,
-      });
+      setActionError(null);
+      await (runtime?.saveSettings ?? saveExportSettings)(settings());
       setSaved(true);
-    } catch {
+    } catch (cause) {
       setSaved(false);
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function onDownload() {
+    if (!runtime) return;
+    setWorking("download");
+    setActionError(null);
+    try {
+      await runtime.download(settings());
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setWorking(null);
+    }
+  }
+
+  async function onBundle() {
+    if (!runtime) return;
+    setWorking("bundle");
+    setActionError(null);
+    try {
+      await runtime.saveBundle();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setWorking(null);
     }
   }
 
@@ -228,7 +301,11 @@ export function ExportModal({
               ref={frameRef}
               style={{ width: `${fit.w}px`, height: `${fit.h}px` }}
             >
-              <img src={previewUrl(ts)} alt="composition" draggable={false} />
+              <img
+                src={runtime?.previewSrc ?? previewUrl(ts)}
+                alt="composition"
+                draggable={false}
+              />
               <div
                 className="export-crop"
                 style={cropStyle}
@@ -306,16 +383,21 @@ export function ExportModal({
 
             <dl className="export-readout">
               <div>
-                <dt>Crop</dt>
+                <dt>Output</dt>
                 <dd>
-                  {Math.round(roundedCrop.w)}×{Math.round(roundedCrop.h)} @{" "}
-                  {Math.round(roundedCrop.x)},{Math.round(roundedCrop.y)}
+                  {Math.round(width)}×{Math.round(height)} px
                 </dd>
               </div>
               <div>
-                <dt>Output</dt>
+                <dt>Framing</dt>
+                <dd>{cropEnabled ? "Custom crop" : "Full composition"}</dd>
+              </div>
+              <div>
+                <dt>Quality</dt>
                 <dd>
-                  {Math.round(width)}×{Math.round(height)} · {Math.round(outScale * 100)}%
+                  {resolutionIndependent
+                    ? "Vector artwork stays sharp"
+                    : `Raster artwork scaled to ${Math.round(outScale * 100)}%`}
                 </dd>
               </div>
             </dl>
@@ -326,22 +408,45 @@ export function ExportModal({
                 soften. Crop a larger area or lower the size.
               </div>
             ) : null}
+            {actionError ? <div className="export-warn">{actionError}</div> : null}
 
             <div className="export-actions">
               <button type="button" className="btn" onClick={onSave}>
                 {saved ? "Saved ✓" : "Save settings"}
               </button>
-              <a
-                className="btn primary"
-                href={exportCropUrl({ format, width, height, crop: roundedCrop })}
-                download
-              >
-                Download {format.toUpperCase()}
-              </a>
+              {runtime ? (
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={working !== null}
+                  onClick={() => void onDownload()}
+                >
+                  {working === "download" ? "Exporting…" : `Download ${format.toUpperCase()}`}
+                </button>
+              ) : (
+                <a
+                  className="btn primary"
+                  href={exportCropUrl({ format, width, height, crop: roundedCrop })}
+                  download
+                >
+                  Download {format.toUpperCase()}
+                </a>
+              )}
             </div>
-            <a className="export-bundle" href={BUNDLE_URL} download>
-              Bundle (.gimpish)
-            </a>
+            {runtime ? (
+              <button
+                type="button"
+                className="export-bundle"
+                disabled={working !== null}
+                onClick={() => void onBundle()}
+              >
+                {working === "bundle" ? "Saving bundle…" : "Bundle (.gimpish)"}
+              </button>
+            ) : (
+              <a className="export-bundle" href={BUNDLE_URL} download>
+                Bundle (.gimpish)
+              </a>
+            )}
           </aside>
         </div>
       </div>
