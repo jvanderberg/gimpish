@@ -11,6 +11,7 @@ out.png
 .DS_Store
 scratch/
 .venv/
+__pycache__/
 packages/cli/dist/
 packages/app/dist/
 packages/cli/README.md

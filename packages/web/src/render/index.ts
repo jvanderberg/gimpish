@@ -11,10 +11,15 @@ import {
 } from "@gimpish/core/model";
 import { isBrowserAdjustNeutral } from "./adjust";
 import { applyAdjustmentsInWorker } from "./adjust-worker-client";
-import type { GimpishElectronApi } from "./api";
-import { canvasFontFamily, premultiplyBlendPixels } from "./vector";
+import { arcGlyphLayout, configureTextContext } from "./text";
+import { premultiplyBlendPixels } from "./vector";
 
 type RenderableImage = ImageBitmap | HTMLImageElement;
+
+/** Asset boundary shared by the served browser, Electron, and headless renderer. */
+export interface BrowserRenderApi {
+  readAsset(path: string): Promise<{ mimeType: string; data: string }>;
+}
 
 const imageCache = new Map<string, Promise<RenderableImage>>();
 const maskedImageCache = new Map<string, Promise<ImageBitmap>>();
@@ -78,7 +83,7 @@ async function svgImage(blob: Blob): Promise<HTMLImageElement> {
   }
 }
 
-async function loadImage(api: GimpishElectronApi, storedPath: string): Promise<RenderableImage> {
+async function loadImage(api: BrowserRenderApi, storedPath: string): Promise<RenderableImage> {
   let pending = imageCache.get(storedPath);
   if (!pending) {
     pending = api.readAsset(storedPath).then(async ({ mimeType, data }) => {
@@ -121,7 +126,7 @@ function maskAlpha(mask: Mask, rgba: Uint8ClampedArray): Uint8ClampedArray {
 }
 
 async function makeMaskCanvas(
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
   mask: Mask,
   width: number,
   height: number,
@@ -170,7 +175,7 @@ async function makeMaskCanvas(
   return feathered;
 }
 
-async function imageForLayer(api: GimpishElectronApi, layer: ImageLayer): Promise<RenderableImage> {
+async function imageForLayer(api: BrowserRenderApi, layer: ImageLayer): Promise<RenderableImage> {
   const source = await loadImage(api, layer.source);
   const layerMask = layer.mask;
   if (!layerMask) return source;
@@ -260,14 +265,9 @@ function drawText(
   ctx.save();
   ctx.translate(t.x, t.y);
   ctx.rotate(((t.rotation ?? 0) * Math.PI) / 180);
-  ctx.font = `${t.style} ${t.weight} ${t.size}px ${canvasFontFamily(t.font)}`;
-  ctx.letterSpacing = `${t.letter_spacing}px`;
-  ctx.textAlign = t.align;
-  ctx.textBaseline = "top";
-  const lines = t.content.split("\n");
-  const lineHeight = t.size * t.line_height;
-  for (const [index, line] of lines.entries()) {
-    const y = index * lineHeight;
+  configureTextContext(ctx, t);
+  const fill = t.gradient ? gradient(ctx, scene, t.gradient) : cssColor(t.fill);
+  const paint = (text: string, x: number, y: number) => {
     if (t.shadow) {
       ctx.shadowColor = cssColor(t.shadow.color);
       ctx.shadowOffsetX = t.shadow.dx;
@@ -278,13 +278,34 @@ function drawText(
       ctx.strokeStyle = cssColor(t.stroke);
       ctx.lineWidth = t.stroke_width;
       ctx.lineJoin = "round";
-      ctx.strokeText(line, 0, y);
+      ctx.strokeText(text, x, y);
       // The SVG filter shadows the combined stroked-and-filled glyph once.
       // Stroke already contains that full silhouette, so do not cast it again for fill.
       ctx.shadowColor = "transparent";
     }
-    ctx.fillStyle = t.gradient ? gradient(ctx, scene, t.gradient) : cssColor(t.fill);
-    ctx.fillText(line, 0, y);
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+  };
+  if (t.arc) {
+    // Spacing is applied manually between glyphs along the circumference.
+    ctx.letterSpacing = "0px";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    for (const glyph of arcGlyphLayout(ctx, t)) {
+      ctx.save();
+      ctx.translate(glyph.x, glyph.y);
+      ctx.rotate(glyph.rotation);
+      paint(glyph.text, 0, 0);
+      ctx.restore();
+    }
+  } else {
+    ctx.textAlign = t.align;
+    ctx.textBaseline = "top";
+    const lines = t.content.split("\n");
+    const lineHeight = t.size * t.line_height;
+    for (const [index, line] of lines.entries()) {
+      paint(line, 0, index * lineHeight);
+    }
   }
   ctx.restore();
 }
@@ -316,7 +337,7 @@ async function drawLayerContent(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   scene: Scene,
   layer: Layer,
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
 ): Promise<void> {
   switch (layer.type) {
     case "image": {
@@ -363,7 +384,7 @@ async function drawLayerContent(
 async function blendedLayerBitmap(
   scene: Scene,
   layer: Layer,
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
 ): Promise<ImageBitmap> {
   const key = `${scene.canvas.width}x${scene.canvas.height}\u0000${JSON.stringify(layer)}`;
   let pending = blendedLayerCache.get(key);
@@ -409,7 +430,7 @@ async function drawLayer(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   scene: Scene,
   layer: Layer,
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
 ): Promise<void> {
   if (!layer.visible) return;
   ctx.save();
@@ -464,7 +485,7 @@ async function drawLayer(
 export async function renderScene(
   canvas: HTMLCanvasElement | OffscreenCanvas,
   scene: Scene,
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
   outputWidth = scene.canvas.width,
   outputHeight = scene.canvas.height,
   sourceCrop?: ExportCrop,
@@ -506,7 +527,7 @@ export function sceneRendersResolutionIndependently(scene: Scene): boolean {
 }
 
 export async function imageNaturalSize(
-  api: GimpishElectronApi,
+  api: BrowserRenderApi,
   storedPath: string,
 ): Promise<{ width: number; height: number }> {
   const image = await loadImage(api, storedPath);

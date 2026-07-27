@@ -8,35 +8,30 @@
  * delta-based transform commits.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import type { EncodeFormat, Layer, LayerBox, SceneDoc, Size } from "@gimpish/core";
+import type { Layer, SceneDoc, Size } from "@gimpish/core";
 import {
+  applyDocumentCommand,
   applyMove,
   applyRotate,
   applyScale,
-  type ExportSettings,
-  encodeRaster,
   findLayer,
   imageSize,
-  layerBox,
   loadScene,
   moveLayerTo,
   parseScene,
-  rasterToPng,
   removeLayer,
-  renderExport,
-  renderLayerSprite,
-  renderPreview,
-  renderScene,
   saveScene,
   sceneRoot,
-  textBounds,
 } from "@gimpish/core";
+import type { TextPatch } from "@gimpish/core/model";
 import { watch } from "chokidar";
 import fastify, { type FastifyInstance } from "fastify";
+import { type BrowserRenderFormat, renderInBrowser } from "../browser-render.ts";
 import { BUNDLE_EXT, createBundle, extractBundle } from "../bundle.ts";
 import { SceneHistory } from "./history.ts";
 import { importImage } from "./imports.ts";
@@ -74,38 +69,39 @@ function parseHide(hide: string | undefined): ReadonlySet<string> | undefined {
   return ids.size > 0 ? ids : undefined;
 }
 
-/**
- * Selection box for one layer, resolving the measurements layerBox needs:
- * natural size for images, rendered alpha bounds for text. Layers whose
- * measurement fails are skipped (no box), matching the Python server.
- */
-async function boxFor(doc: SceneDoc, layer: Layer): Promise<LayerBox | null> {
-  if (layer.type === "image") {
-    try {
-      const naturalSize = await imageSize(path.join(sceneRoot(doc), layer.source));
-      return layerBox(doc.scene, layer, { naturalSize });
-    } catch {
-      return null;
-    }
-  }
-  if (layer.type === "text") {
-    try {
-      const bounds = await textBounds(doc, layer);
-      if (!bounds) return null;
-      return layerBox(doc.scene, layer, { textBounds: bounds });
-    } catch {
-      return null;
-    }
-  }
-  return layerBox(doc.scene, layer);
-}
-
-const EXPORT_FORMATS: Record<string, { format: EncodeFormat; mime: string }> = {
+const EXPORT_FORMATS: Record<string, { format: BrowserRenderFormat; mime: string }> = {
   png: { format: "png", mime: "image/png" },
   jpg: { format: "jpg", mime: "image/jpeg" },
   jpeg: { format: "jpg", mime: "image/jpeg" },
   webp: { format: "webp", mime: "image/webp" },
 };
+
+const ASSET_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+};
+
+async function browserRenderBytes(args: {
+  scenePath: string;
+  scene: SceneDoc["scene"];
+  width: number;
+  height: number;
+  crop: { x: number; y: number; w: number; h: number };
+  format: BrowserRenderFormat;
+  quality: number;
+}): Promise<Buffer> {
+  const temporary = mkdtempSync(path.join(tmpdir(), "gimpish-serve-render-"));
+  const out = path.join(temporary, `render.${args.format}`);
+  try {
+    await renderInBrowser({ ...args, out });
+    return readFileSync(out);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
 
 /** Raised body limit so full-resolution photo uploads fit (fastify default is 1 MB). */
 const BODY_LIMIT = 256 * 1024 * 1024;
@@ -190,33 +186,52 @@ export function createApp(scenePath: string): FastifyInstance {
 
   app.get("/api/scene", async () => loadScene(scene).scene);
 
+  // Referenced assets for the canonical browser renderer. The scene's exact
+  // asset paths are the allowlist, preventing arbitrary reads from the host.
+  app.get<{ Querystring: { path?: string } }>("/api/asset", async (req, reply) => {
+    const storedPath = req.query.path;
+    if (!storedPath) return reply.code(400).send({ error: "missing asset path" });
+    const doc = loadScene(scene);
+    const referenced = new Set<string>();
+    for (const layer of doc.scene.layers) {
+      if (layer.type !== "image") continue;
+      referenced.add(layer.source);
+      if (layer.mask?.source) referenced.add(layer.mask.source);
+      if (layer.mask?.cache) referenced.add(layer.mask.cache);
+    }
+    if (!referenced.has(storedPath)) {
+      return reply.code(404).send({ error: "asset is not referenced by the active scene" });
+    }
+    const file = path.resolve(sceneRoot(doc), storedPath);
+    const mime = ASSET_MIME[path.extname(file).toLowerCase()];
+    if (!mime) return reply.code(415).send({ error: "unsupported image asset type" });
+    return reply.type(mime).send(readFileSync(file));
+  });
+
   app.get<{ Querystring: { max?: string; hide?: string } }>(
     "/api/preview.png",
     async (req, reply) => {
       const doc = loadScene(scene);
-      const img = await renderPreview(
-        doc,
-        toNumber(req.query.max, 1400),
-        parseHide(req.query.hide),
-      );
-      return reply
-        .header("Cache-Control", "no-store")
-        .type("image/png")
-        .send(await rasterToPng(img));
+      const max = toNumber(req.query.max, 1400);
+      const scale = Math.min(1, max / Math.max(doc.scene.canvas.width, doc.scene.canvas.height));
+      const width = Math.max(1, Math.round(doc.scene.canvas.width * scale));
+      const height = Math.max(1, Math.round(doc.scene.canvas.height * scale));
+      const hidden = parseHide(req.query.hide);
+      const renderScene = hidden
+        ? { ...doc.scene, layers: doc.scene.layers.filter((layer) => !hidden.has(layer.id)) }
+        : doc.scene;
+      const bytes = await browserRenderBytes({
+        scenePath: doc.path,
+        scene: renderScene,
+        width,
+        height,
+        crop: { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height },
+        format: "png",
+        quality: 90,
+      });
+      return reply.header("Cache-Control", "no-store").type("image/png").send(bytes);
     },
   );
-
-  app.get("/api/geometry", async () => {
-    const doc = loadScene(scene);
-    const boxes: LayerBox[] = [];
-    for (const layer of doc.scene.layers) {
-      if (!layer.visible) continue;
-      const box = await boxFor(doc, layer);
-      if (box) boxes.push(box);
-    }
-    const { width, height } = doc.scene.canvas;
-    return { canvas: { width, height }, boxes };
-  });
 
   app.get<{ Params: { id: string }; Querystring: { max?: string } }>(
     "/api/layer/:id/sprite.png",
@@ -228,11 +243,24 @@ export function createApp(scenePath: string): FastifyInstance {
       } catch (err) {
         return reply.code(404).send({ error: errorMessage(err) });
       }
-      const img = await renderLayerSprite(doc, layer, toNumber(req.query.max, 1400));
-      return reply
-        .header("Cache-Control", "no-store")
-        .type("image/png")
-        .send(await rasterToPng(img));
+      const max = toNumber(req.query.max, 1400);
+      const scale = Math.min(1, max / Math.max(doc.scene.canvas.width, doc.scene.canvas.height));
+      const width = Math.max(1, Math.round(doc.scene.canvas.width * scale));
+      const height = Math.max(1, Math.round(doc.scene.canvas.height * scale));
+      const bytes = await browserRenderBytes({
+        scenePath: doc.path,
+        scene: {
+          ...doc.scene,
+          canvas: { ...doc.scene.canvas, background: "transparent" },
+          layers: [layer],
+        },
+        width,
+        height,
+        crop: { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height },
+        format: "png",
+        quality: 90,
+      });
+      return reply.header("Cache-Control", "no-store").type("image/png").send(bytes);
     },
   );
 
@@ -355,6 +383,27 @@ export function createApp(scenePath: string): FastifyInstance {
     return { ok: true };
   });
 
+  /** Edit native text content and circular arc layout. */
+  app.post<{ Params: { id: string }; Body: TextPatch }>(
+    "/api/layer/:id/text",
+    async (req, reply) => {
+      const doc = loadScene(scene);
+      try {
+        const result = applyDocumentCommand(doc.scene, {
+          kind: "edit-text",
+          layerId: req.params.id,
+          patch: req.body ?? {},
+        });
+        doc.scene = result.scene;
+      } catch (cause) {
+        return reply.code(400).send({ error: errorMessage(cause) });
+      }
+      saveScene(doc);
+      history.sync();
+      return { ok: true };
+    },
+  );
+
   // ---- undo / redo -------------------------------------------------------------------
 
   app.get("/api/history", async () => history.depths());
@@ -412,26 +461,33 @@ export function createApp(scenePath: string): FastifyInstance {
     const cropH = Number(req.query.cropH);
     const quality = toNumber(req.query.quality, 90);
 
-    let bytes: Buffer;
+    let outWidth: number;
+    let outHeight: number;
+    let crop: { x: number; y: number; w: number; h: number };
     if (width && height && cropW > 0 && cropH > 0) {
-      const settings: ExportSettings = {
-        width,
-        height,
-        format: spec.format,
-        quality,
-        crop: {
-          x: Number(req.query.cropX) || 0,
-          y: Number(req.query.cropY) || 0,
-          w: cropW,
-          h: cropH,
-        },
-        preset: null,
+      outWidth = width;
+      outHeight = height;
+      crop = {
+        x: Number(req.query.cropX) || 0,
+        y: Number(req.query.cropY) || 0,
+        w: cropW,
+        h: cropH,
       };
-      bytes = await renderExport(doc, settings);
     } else {
-      const img = await renderScene(doc, { width, height });
-      bytes = await encodeRaster(img, spec.format, quality);
+      const aspect = doc.scene.canvas.width / doc.scene.canvas.height;
+      outWidth = width ?? (height ? Math.round(height * aspect) : doc.scene.canvas.width);
+      outHeight = height ?? (width ? Math.round(width / aspect) : doc.scene.canvas.height);
+      crop = { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height };
     }
+    const bytes = await browserRenderBytes({
+      scenePath: doc.path,
+      scene: doc.scene,
+      width: outWidth,
+      height: outHeight,
+      crop,
+      format: spec.format,
+      quality,
+    });
     return reply
       .header("Content-Disposition", `attachment; filename="${downloadName(`.${spec.format}`)}"`)
       .type(spec.mime)

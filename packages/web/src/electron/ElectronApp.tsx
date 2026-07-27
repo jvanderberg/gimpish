@@ -5,7 +5,6 @@ import {
   type ExportSettings,
   findLayer,
   type LayerBox,
-  layerBox,
   moveLayerTo,
   parseScene,
   removeLayer,
@@ -25,16 +24,16 @@ import {
 } from "../components/icons";
 import { LayerPanel } from "../components/LayerPanel";
 import { useElementSize } from "../hooks/useElementSize";
-import { containBox, preferredHitTest } from "../lib/geometry";
-import { electronApi, type RendererRequest, type RendererResponse } from "./api";
-import { removeBackgroundInWorker } from "./background-worker-client";
+import { type AlignmentGuide, containBox, preferredHitTest, snapMove } from "../lib/geometry";
 import {
   clearRendererCaches,
   imageNaturalSize,
   renderScene,
   sceneRendersResolutionIndependently,
-} from "./render";
-import { canvasFontFamily } from "./vector";
+} from "../render";
+import { type LayerBoxes, resolveLayerBoxes } from "../render/geometry";
+import { electronApi, type RendererRequest, type RendererResponse } from "./api";
+import { removeBackgroundInWorker } from "./background-worker-client";
 
 interface Point {
   x: number;
@@ -47,11 +46,10 @@ interface ActiveDrag {
   start: Point;
   base: Scene;
   box: LayerBox;
+  targets: LayerBox[];
   startAngle: number;
   startDistance: number;
 }
-
-type LayerBoxes = Map<string, LayerBox>;
 
 const ZOOM_STEPS = [0.25, 0.5, 1, 2, 4] as const;
 const ZOOM_LABELS: Readonly<Record<number, string>> = {
@@ -88,59 +86,6 @@ function boxHandles(box: LayerBox, offset: number): { scale: Point[]; rotate: Po
     ],
     rotate: boxPoint(box, 0, -box.h / 2 - offset),
   };
-}
-
-function textLayerBox(scene: Scene, layerId: string): LayerBox | null {
-  const layer = findLayer(scene, layerId);
-  if (layer.type !== "text") return null;
-  const t = layer.text;
-  const measure = new OffscreenCanvas(1, 1).getContext("2d");
-  if (!measure) return null;
-  measure.font = `${t.style} ${t.weight} ${t.size}px ${canvasFontFamily(t.font)}`;
-  measure.letterSpacing = `${t.letter_spacing}px`;
-  const lines = t.content.split("\n");
-  const width = Math.max(t.size * 0.25, ...lines.map((line) => measure.measureText(line).width));
-  const height = Math.max(t.size, lines.length * t.size * t.line_height);
-  const left = t.align === "center" ? t.x - width / 2 : t.align === "right" ? t.x - width : t.x;
-  const unrotatedCenter = { x: left + width / 2, y: t.y + height / 2 };
-  const center = rotateAround(unrotatedCenter, { x: t.x, y: t.y }, t.rotation);
-  return {
-    id: layer.id,
-    type: layer.type,
-    cx: center.x,
-    cy: center.y,
-    w: width,
-    h: height,
-    rotation: t.rotation,
-    pivotx: t.x,
-    pivoty: t.y,
-    move: true,
-    rotate: true,
-    scale: true,
-  };
-}
-
-async function resolveLayerBoxes(
-  scene: Scene,
-  api: ReturnType<typeof electronApi>,
-): Promise<LayerBoxes> {
-  const boxes: LayerBoxes = new Map();
-  await Promise.all(
-    scene.layers.map(async (layer) => {
-      if (!layer.visible) return;
-      if (layer.type === "text") {
-        const resolved = textLayerBox(scene, layer.id);
-        if (resolved) boxes.set(layer.id, resolved);
-        return;
-      }
-      const resolved =
-        layer.type === "image"
-          ? layerBox(scene, layer, { naturalSize: await imageNaturalSize(api, layer.source) })
-          : layerBox(scene, layer);
-      if (resolved) boxes.set(layer.id, resolved);
-    }),
-  );
-  return boxes;
 }
 
 function drawSelection(canvas: HTMLCanvasElement, box: LayerBox | undefined): void {
@@ -182,6 +127,29 @@ function drawSelection(canvas: HTMLCanvasElement, box: LayerBox | undefined): vo
   ctx.arc(handles.rotate.x, handles.rotate.y, handleRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawAlignmentGuides(canvas: HTMLCanvasElement, guides: AlignmentGuide[]): void {
+  if (guides.length === 0) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const cssScale = canvas.getBoundingClientRect().width / canvas.width || 1;
+  ctx.save();
+  ctx.lineWidth = 1.25 / cssScale;
+  ctx.setLineDash([5 / cssScale, 3 / cssScale]);
+  for (const guide of guides) {
+    ctx.strokeStyle = guide.kind === "canvas-center" ? "#b867ff" : "#ff4fc3";
+    ctx.beginPath();
+    if (guide.axis === "x") {
+      ctx.moveTo(guide.position, 0);
+      ctx.lineTo(guide.position, canvas.height);
+    } else {
+      ctx.moveTo(0, guide.position);
+      ctx.lineTo(canvas.width, guide.position);
+    }
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -240,6 +208,7 @@ export function ElectronApp() {
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [drag, setDrag] = useState<ActiveDrag | null>(null);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const [boxes, setBoxes] = useState<LayerBoxes>(new Map());
   const historyRef = useRef<{ undo: Scene[]; redo: Scene[] }>({ undo: [], redo: [] });
   const [historyDepths, setHistoryDepths] = useState({ undo: 0, redo: 0 });
@@ -309,10 +278,11 @@ export function ElectronApp() {
         const context = canvas.getContext("2d");
         if (!context) throw new Error("2D canvas is unavailable");
         context.drawImage(surface, 0, 0);
+        drawAlignmentGuides(canvas, alignmentGuides);
         drawSelection(canvas, selected ? boxes.get(selected) : undefined);
       })
       .catch((cause: unknown) => setError(errorMessage(cause)));
-  }, [api, boxes, scene, selected]);
+  }, [alignmentGuides, api, boxes, scene, selected]);
 
   useEffect(() => {
     if (!scene) return;
@@ -641,6 +611,7 @@ export function ElectronApp() {
       const mode = selectedMode ?? "move";
       if ((mode === "move" && !box.move) || (mode === "rotate" && !box.rotate)) return;
       canvas.setPointerCapture(event.pointerId);
+      setAlignmentGuides([]);
       const pivot = { x: box.pivotx, y: box.pivoty };
       setDrag({
         layerId,
@@ -648,6 +619,7 @@ export function ElectronApp() {
         start: point,
         base: current,
         box,
+        targets: orderedBoxes.filter((candidate) => candidate.id !== layerId),
         startAngle: angleFrom(pivot, point),
         startDistance: Math.max(0.001, distance(pivot, point)),
       });
@@ -663,11 +635,23 @@ export function ElectronApp() {
       const pivot = { x: drag.box.pivotx, y: drag.box.pivoty };
       const command: DocumentCommand = { kind: "transform-layer", layerId: drag.layerId };
       if (drag.mode === "move") {
-        command.dx = point.x - drag.start.x;
-        command.dy = point.y - drag.start.y;
+        const cssScale = canvas.getBoundingClientRect().width / canvas.width || 1;
+        const snapped = snapMove(
+          drag.box,
+          point.x - drag.start.x,
+          point.y - drag.start.y,
+          drag.targets,
+          drag.base.canvas,
+          6 / cssScale,
+        );
+        command.dx = snapped.dx;
+        command.dy = snapped.dy;
+        setAlignmentGuides(snapped.guides);
       } else if (drag.mode === "rotate") {
+        setAlignmentGuides([]);
         command.drot = ((angleFrom(pivot, point) - drag.startAngle) * 180) / Math.PI;
       } else {
+        setAlignmentGuides([]);
         command.scale = distance(pivot, point) / drag.startDistance;
         const layer = findLayer(drag.base, drag.layerId);
         if (layer.type === "image") {
@@ -689,6 +673,7 @@ export function ElectronApp() {
       const canvas = canvasRef.current;
       if (canvas?.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
       setDrag(null);
+      setAlignmentGuides([]);
       const current = sceneRef.current;
       if (drag && current) {
         recordBefore(drag.base);
@@ -1033,6 +1018,11 @@ export function ElectronApp() {
             findLayer(draft, id).visible = visible;
           })
         }
+        onEditText={(id, patch) => {
+          void applyCommand({ kind: "edit-text", layerId: id, patch }, true).catch(
+            (cause: unknown) => setError(errorMessage(cause)),
+          );
+        }}
         onReorder={(id, index) => mutateScene((draft) => moveLayerTo(draft, id, index))}
         err={error}
         selLayer={selectedLayer}

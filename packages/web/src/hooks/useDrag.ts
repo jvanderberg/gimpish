@@ -6,8 +6,16 @@ import {
   useState,
 } from "react";
 import type { LayerBox, TransformDelta } from "../api";
-import type { Point } from "../lib/geometry";
-import { clientToCanvas, corners, DEG, handlePos, hitTest, nextStamp } from "../lib/geometry";
+import type { AlignmentGuide, Point } from "../lib/geometry";
+import {
+  clientToCanvas,
+  corners,
+  DEG,
+  handlePos,
+  hitTest,
+  nextStamp,
+  snapMove,
+} from "../lib/geometry";
 
 export type DragState =
   | {
@@ -17,6 +25,7 @@ export type DragState =
       start: Point;
       orig: { cx: number; cy: number };
       cur: { cx: number; cy: number };
+      guides?: AlignmentGuide[];
     }
   | {
       mode: "rotate";
@@ -45,6 +54,8 @@ interface UseDragArgs {
   selBox: LayerBox | null;
   setSel: (id: string | null) => void;
   k: number;
+  canvasWidth: number;
+  canvasHeight: number;
   onCommit: (id: string, delta: TransformDelta) => void;
 }
 
@@ -61,7 +72,16 @@ export interface DragHandlers {
  * pointermove updates only local state; pointerup commits ONE transform
  * POST. The server + WS round-trip then refreshes canonical state.
  */
-export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragArgs): DragHandlers {
+export function useDrag({
+  svgRef,
+  boxes,
+  selBox,
+  setSel,
+  k,
+  canvasWidth,
+  canvasHeight,
+  onCommit,
+}: UseDragArgs): DragHandlers {
   const [drag, setDrag] = useState<DragState | null>(null);
   // True when the current gesture started with a selection already active,
   // so a stationary click can deselect instead of committing a no-op move.
@@ -118,6 +138,7 @@ export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragA
           start: pt,
           orig: { cx: box.cx, cy: box.cy },
           cur: { cx: box.cx, cy: box.cy },
+          guides: [],
         });
       }
     },
@@ -157,9 +178,20 @@ export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragA
       setDrag((d) => {
         if (!d) return d;
         if (d.mode === "move") {
+          const box = boxes.find((candidate) => candidate.id === d.id);
+          if (!box) return d;
+          const snapped = snapMove(
+            box,
+            pt.x - d.start.x,
+            pt.y - d.start.y,
+            boxes,
+            { width: canvasWidth, height: canvasHeight },
+            6 * k,
+          );
           return {
             ...d,
-            cur: { cx: d.orig.cx + (pt.x - d.start.x), cy: d.orig.cy + (pt.y - d.start.y) },
+            cur: { cx: d.orig.cx + snapped.dx, cy: d.orig.cy + snapped.dy },
+            guides: snapped.guides,
           };
         }
         if (d.mode === "scale") {
@@ -171,7 +203,7 @@ export function useDrag({ svgRef, boxes, selBox, setSel, k, onCommit }: UseDragA
         return { ...d, cur: { rotation: rot } };
       });
     },
-    [svgRef],
+    [svgRef, boxes, canvasWidth, canvasHeight, k],
   );
 
   const onPointerUp = useCallback(

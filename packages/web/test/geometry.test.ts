@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { DragState } from "../src/hooks/useDrag";
 import {
   applyDragToBox,
+  boxBounds,
   containBox,
   corners,
   ghostStyleFor,
@@ -13,6 +14,7 @@ import {
   insideBox,
   preferredHitTest,
   rotAboutPivot,
+  snapMove,
 } from "../src/lib/geometry";
 
 function box(overrides: Partial<LayerBox> = {}): LayerBox {
@@ -102,6 +104,56 @@ describe("rotAboutPivot / handlePos / corners", () => {
     const first = cs[0];
     expect(first?.x).toBeCloseTo(120);
     expect(first?.y).toBeCloseTo(110);
+  });
+});
+
+describe("boxBounds / snapMove", () => {
+  it("uses the visible axis-aligned bounds of a rotated box", () => {
+    expect(boxBounds(box({ rotation: 90 }))).toMatchObject({
+      left: 90,
+      right: 110,
+      top: 80,
+      bottom: 120,
+    });
+  });
+
+  it("snaps both object centers to the canvas center lines", () => {
+    const result = snapMove(box(), 397, 396, [], { width: 1000, height: 1000 }, 6);
+    expect(result).toEqual({
+      dx: 400,
+      dy: 400,
+      guides: [
+        { axis: "x", position: 500, kind: "canvas-center" },
+        { axis: "y", position: 500, kind: "canvas-center" },
+      ],
+    });
+  });
+
+  it("snaps horizontal and vertical centers to another object", () => {
+    const target = box({ id: "target", cx: 400, cy: 300, w: 80, h: 60 });
+    const result = snapMove(box(), 299, 199, [target], { width: 2000, height: 2000 }, 6);
+    expect(result.dx).toBe(300);
+    expect(result.dy).toBe(200);
+    expect(result.guides).toEqual([
+      { axis: "x", position: 400, kind: "object-center" },
+      { axis: "y", position: 300, kind: "object-center" },
+    ]);
+  });
+
+  it("snaps corresponding right and bottom edges", () => {
+    const target = box({ id: "target", cx: 400, cy: 300, w: 100, h: 50 });
+    const result = snapMove(box(), 331, 214, [target], { width: 2000, height: 2000 }, 6);
+    expect(result.dx).toBe(330);
+    expect(result.dy).toBe(215);
+    expect(result.guides).toEqual([
+      { axis: "x", position: 450, kind: "edge" },
+      { axis: "y", position: 325, kind: "edge" },
+    ]);
+  });
+
+  it("does not alter movement outside the screen-scaled threshold", () => {
+    const result = snapMove(box(), 100, 100, [], { width: 2000, height: 2000 }, 6);
+    expect(result).toEqual({ dx: 100, dy: 100, guides: [] });
   });
 });
 

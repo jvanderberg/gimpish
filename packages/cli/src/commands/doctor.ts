@@ -17,7 +17,9 @@ function line(status: Status, label: string, detail: string): string {
   return `[${tag}] ${label.padEnd(16)} ${detail}`;
 }
 
-async function checkNativeModule(name: "sharp" | "onnxruntime-node"): Promise<string | null> {
+async function checkNativeModule(
+  name: "electron" | "sharp" | "onnxruntime-node",
+): Promise<string | null> {
   try {
     await import(name);
     return null;
@@ -48,7 +50,14 @@ export async function doctorAction(): Promise<{ report: string; healthy: boolean
   push(
     sharpErr ? "fail" : "ok",
     "sharp",
-    sharpErr ? `failed to load: ${sharpErr}` : "native image pipeline loads",
+    sharpErr ? `failed to load: ${sharpErr}` : "image metadata/processing loads",
+  );
+
+  const electronErr = await checkNativeModule("electron");
+  push(
+    electronErr ? "fail" : "ok",
+    "renderer",
+    electronErr ? `Electron unavailable: ${electronErr}` : "canonical Chromium renderer available",
   );
 
   const onnxErr = await checkNativeModule("onnxruntime-node");

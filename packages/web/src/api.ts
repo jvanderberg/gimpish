@@ -1,12 +1,8 @@
 /** Typed fetch helpers for the editor UI, using the shared scene contract. */
-import type { ExportSettings, LayerBox, Scene } from "@gimpish/core/model";
+import type { ExportSettings, Scene, TextPatch } from "@gimpish/core/model";
+import type { BrowserRenderApi } from "./render";
 
 export type { Canvas, Layer, LayerBox, Scene } from "@gimpish/core/model";
-
-export interface Geometry {
-  canvas: { width: number; height: number };
-  boxes: LayerBox[];
-}
 
 export interface TransformDelta {
   dx?: number;
@@ -25,9 +21,23 @@ export function fetchScene(): Promise<Scene> {
   return getJSON<Scene>("/api/scene");
 }
 
-export function fetchGeometry(): Promise<Geometry> {
-  return getJSON<Geometry>("/api/geometry");
-}
+/** Asset reader used by the same browser-native renderer as Electron. */
+export const browserRenderApi: BrowserRenderApi = {
+  async readAsset(path: string) {
+    const res = await fetch(`/api/asset?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error(`asset ${JSON.stringify(path)} responded ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return {
+      mimeType: res.headers.get("Content-Type")?.split(";")[0] ?? "application/octet-stream",
+      data: btoa(binary),
+    };
+  },
+};
 
 /** Composited preview PNG URL; `hideId` drops a layer (used mid-drag). */
 export function previewUrl(ts: number, hideId?: string | null): string {
@@ -104,6 +114,15 @@ export async function setLayerVisible(id: string, visible: boolean): Promise<voi
     body: JSON.stringify({ visible }),
   });
   if (!res.ok) throw new Error(`visible responded ${res.status}`);
+}
+
+export async function editText(id: string, patch: TextPatch): Promise<void> {
+  const res = await fetch(`/api/layer/${encodeURIComponent(id)}/text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`text edit responded ${res.status}`);
 }
 
 // ---- import / export ---------------------------------------------------------------

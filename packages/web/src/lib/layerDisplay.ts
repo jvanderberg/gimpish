@@ -55,7 +55,8 @@ export function layerSubtitle(layer: Layer): string {
       const t = layer.text;
       const content = t.content.replaceAll("\n", " ");
       const adjPart = layer.adjust ? `  ·  ${adjustSubtitle(layer)}` : "";
-      return `${content}  ·  ${t.font} ${t.size}${adjPart}`;
+      const arcPart = t.arc ? `  ·  arc r${Math.round(t.arc.radius)}` : "";
+      return `${content}  ·  ${t.font} ${t.size}${arcPart}${adjPart}`;
     }
     default:
       return "";

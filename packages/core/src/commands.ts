@@ -9,6 +9,8 @@ import {
   parseScene,
   type Scene,
   type Shadow,
+  type TextArc,
+  type TextSpec,
 } from "./schema.ts";
 
 export interface TransformLayerCommand {
@@ -43,6 +45,16 @@ export interface EditLayerCommand {
   adjustEnabled?: boolean;
 }
 
+export type TextPatch = Partial<Omit<TextSpec, "arc">> & {
+  arc?: Partial<TextArc> | null;
+};
+
+export interface EditTextCommand {
+  kind: "edit-text";
+  layerId: string;
+  patch: TextPatch;
+}
+
 export interface ReorderLayerCommand {
   kind: "reorder-layer";
   layerId: string;
@@ -53,6 +65,7 @@ export type DocumentCommand =
   | TransformLayerCommand
   | FitLayerCommand
   | EditLayerCommand
+  | EditTextCommand
   | ReorderLayerCommand;
 
 export interface OperationReceipt {
@@ -140,6 +153,22 @@ export function applyDocumentCommand(
             };
     }
     if (command.adjustEnabled !== undefined) layer.adjustEnabled = command.adjustEnabled;
+  } else if (command.kind === "edit-text") {
+    if (layer.type !== "text") throw new Error("edit-text applies to text layers");
+    const { arc, ...patch } = command.patch;
+    Object.assign(layer.text, definedProperties(patch));
+    if (arc !== undefined) {
+      layer.text.arc =
+        arc === null
+          ? undefined
+          : {
+              radius: 400,
+              angle: -90,
+              direction: "clockwise",
+              ...layer.text.arc,
+              ...definedProperties(arc),
+            };
+    }
   } else {
     moveLayerTo(scene, command.layerId, command.index);
   }

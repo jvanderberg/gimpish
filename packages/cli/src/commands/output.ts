@@ -1,20 +1,16 @@
-/** Output verbs: preview, render, export. */
+/** Output verbs: preview, render, export — all through the browser renderer. */
 
-import { writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   EXPORT_PRESETS,
   type ExportCrop,
   type ExportSettings,
   isExportPreset,
-  rasterToPng,
-  renderExportToFile,
-  renderPreview,
-  renderToFile,
   resolveExportCrop,
   saveScene,
 } from "@gimpish/core";
 import type { Command } from "commander";
+import { renderInBrowser } from "../browser-render.ts";
 import { CliError, displayScene, loadOrFail, parseIntStrict, sceneOption } from "../shared.ts";
 
 type OutFormat = "png" | "jpg" | "webp";
@@ -50,9 +46,19 @@ export async function previewAction(opts: {
   scene: string;
 }): Promise<string> {
   const doc = loadOrFail(opts.scene);
-  const img = await renderPreview(doc, opts.max);
-  writeFileSync(opts.out, await rasterToPng(img));
-  return `preview -> ${opts.out} (${img.width}x${img.height}) [scene: ${displayScene(doc.path)}]`;
+  const scale = Math.min(1, opts.max / Math.max(doc.scene.canvas.width, doc.scene.canvas.height));
+  const width = Math.max(1, Math.round(doc.scene.canvas.width * scale));
+  const height = Math.max(1, Math.round(doc.scene.canvas.height * scale));
+  await renderInBrowser({
+    scenePath: doc.path,
+    out: opts.out,
+    width,
+    height,
+    crop: { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height },
+    format: "png",
+    quality: 90,
+  });
+  return `preview -> ${opts.out} (${width}x${height}) [scene: ${displayScene(doc.path)}]`;
 }
 
 export async function renderAction(opts: {
@@ -62,7 +68,22 @@ export async function renderAction(opts: {
   scene: string;
 }): Promise<string> {
   const doc = loadOrFail(opts.scene);
-  await renderToFile(doc, opts.out, { width: opts.width, height: opts.height });
+  const sx = opts.width
+    ? opts.width / doc.scene.canvas.width
+    : opts.height
+      ? opts.height / doc.scene.canvas.height
+      : 1;
+  const width = opts.width ?? Math.round(doc.scene.canvas.width * sx);
+  const height = opts.height ?? Math.round(doc.scene.canvas.height * sx);
+  await renderInBrowser({
+    scenePath: doc.path,
+    out: opts.out,
+    width,
+    height,
+    crop: { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height },
+    format: formatFromExt(opts.out) ?? "png",
+    quality: 90,
+  });
   return `rendered -> ${opts.out} [scene: ${displayScene(doc.path)}]`;
 }
 
@@ -112,12 +133,20 @@ export async function exportAction(opts: {
       preset: opts.preset ?? (sizeFromFlags ? null : (saved?.preset ?? null)),
     };
     const out = opts.out ?? `export.${format}`;
-    await renderExportToFile(doc, out, settings);
+    const eff = resolveExportCrop(doc.scene.canvas, settings);
+    await renderInBrowser({
+      scenePath: doc.path,
+      out,
+      width,
+      height,
+      crop: eff,
+      format,
+      quality,
+    });
     if (opts.save) {
       doc.scene.export = settings;
       saveScene(doc);
     }
-    const eff = resolveExportCrop(doc.scene.canvas, settings);
     const savedNote = opts.save ? " · saved export settings" : "";
     return `exported -> ${out} (${width}x${height}, crop ${eff.x},${eff.y} ${eff.w}x${eff.h})${savedNote} [scene: ${displayScene(doc.path)}]`;
   }
@@ -127,7 +156,15 @@ export async function exportAction(opts: {
       "nothing to export: pass --out, or --preset / --width+--height (or save export settings first)",
     );
   }
-  await renderToFile(doc, opts.out, { width: opts.width, height: opts.height, quality });
+  await renderInBrowser({
+    scenePath: doc.path,
+    out: opts.out,
+    width: doc.scene.canvas.width,
+    height: doc.scene.canvas.height,
+    crop: { x: 0, y: 0, w: doc.scene.canvas.width, h: doc.scene.canvas.height },
+    format,
+    quality,
+  });
   return `exported -> ${opts.out} [scene: ${displayScene(doc.path)}]`;
 }
 

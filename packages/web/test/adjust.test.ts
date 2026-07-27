@@ -1,6 +1,6 @@
 import type { Adjust } from "@gimpish/core/model";
 import { describe, expect, it } from "vitest";
-import { applyBrowserAdjustments, isBrowserAdjustNeutral } from "../src/electron/adjust";
+import { applyBrowserAdjustments, isBrowserAdjustNeutral } from "../src/render/adjust";
 
 function adjustment(values: Partial<Adjust> = {}): Adjust {
   return {

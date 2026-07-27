@@ -30,7 +30,8 @@
   },
   "files": [
     "bin/",
-    "dist/"
+    "dist/",
+    "headless/"
   ],
   "scripts": {
     "prepack": "node scripts/prepack.mjs"
@@ -45,6 +46,9 @@
     "onnxruntime-node": "^1.27.0",
     "sharp": "^0.34.0",
     "zod": "^4.0.0"
+  },
+  "optionalDependencies": {
+    "electron": "^43.1.1"
   },
   "devDependencies": {
     "esbuild": "^0.28.0"

@@ -5,6 +5,7 @@
  * there is exactly one definition of the scene contract.
  */
 
+export * from "./blend.ts";
 export * from "./color.ts";
 export * from "./commands.ts";
 export * from "./editor.ts";

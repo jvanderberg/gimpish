@@ -413,6 +413,16 @@ body {
   stroke: var(--accent);
 }
 
+.frame svg .alignment-guide {
+  pointer-events: none;
+  stroke: #ff4fc3;
+  stroke-dasharray: 5 3;
+}
+
+.frame svg .alignment-guide.canvas-center {
+  stroke: #b867ff;
+}
+
 .frame svg .hit {
   fill: transparent;
   cursor: move;
@@ -668,6 +678,54 @@ body {
 .xform b {
   color: var(--txt);
   font-weight: 600;
+}
+
+.text-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-family: system-ui, sans-serif;
+}
+
+.text-controls label {
+  display: grid;
+  gap: 3px;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.text-controls input,
+.text-controls select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #1b1d23;
+  color: var(--txt);
+  font:
+    11px system-ui,
+    sans-serif;
+}
+
+.text-control-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.text-controls .text-arc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--txt);
+}
+
+.text-controls .text-arc-toggle input {
+  width: auto;
 }
 
 .hint {

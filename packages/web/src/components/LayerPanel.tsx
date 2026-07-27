@@ -1,5 +1,5 @@
-import type { Layer, Scene } from "@gimpish/core/model";
-import type { DragEvent as ReactDragEvent } from "react";
+import type { Layer, Scene, TextLayer, TextPatch } from "@gimpish/core/model";
+import type { DragEvent as ReactDragEvent, FocusEvent as ReactFocusEvent } from "react";
 import { useCallback, useState } from "react";
 import { adjustSubtitle, layerSubtitle, shapeIcon } from "../lib/layerDisplay";
 import { ICON_EYE, ICON_EYE_OFF } from "./icons";
@@ -126,10 +126,134 @@ interface LayerPanelProps {
   onDelete: (id: string) => void;
   onToggleAdjust: (id: string, enabled: boolean) => void;
   onToggleVisible: (id: string, visible: boolean) => void;
+  onEditText: (id: string, patch: TextPatch) => void;
   /** `index` uses `layer move --to` semantics: paint-order slot after removal, 0 = back. */
   onReorder: (id: string, index: number) => void;
   err: string | null;
   selLayer: Layer | null;
+}
+
+function TextControls({ layer, onEdit }: { layer: TextLayer; onEdit: (patch: TextPatch) => void }) {
+  const text = layer.text;
+  const numberPatch =
+    (key: "size" | "letter_spacing") => (event: ReactFocusEvent<HTMLInputElement>) => {
+      const value = Number(event.currentTarget.value);
+      if (Number.isFinite(value)) onEdit({ [key]: value });
+    };
+  const arcNumberPatch =
+    (key: "radius" | "angle") => (event: ReactFocusEvent<HTMLInputElement>) => {
+      const value = Number(event.currentTarget.value);
+      if (Number.isFinite(value)) onEdit({ arc: { [key]: value } });
+    };
+
+  return (
+    <div className="text-controls">
+      <label>
+        Text
+        <input
+          type="text"
+          defaultValue={text.content}
+          onBlur={(event) => onEdit({ content: event.currentTarget.value })}
+        />
+      </label>
+      <div className="text-control-grid">
+        <label>
+          Font
+          <input
+            type="text"
+            defaultValue={text.font}
+            onBlur={(event) => onEdit({ font: event.currentTarget.value })}
+          />
+        </label>
+        <label>
+          Weight
+          <input
+            type="text"
+            defaultValue={text.weight}
+            onBlur={(event) => onEdit({ weight: event.currentTarget.value })}
+          />
+        </label>
+        <label>
+          Stretch
+          <select
+            value={text.stretch}
+            onChange={(event) =>
+              onEdit({
+                stretch: event.currentTarget.value as typeof text.stretch,
+              })
+            }
+          >
+            <option value="ultra-condensed">Ultra condensed</option>
+            <option value="extra-condensed">Extra condensed</option>
+            <option value="condensed">Condensed</option>
+            <option value="semi-condensed">Semi condensed</option>
+            <option value="normal">Normal</option>
+            <option value="semi-expanded">Semi expanded</option>
+            <option value="expanded">Expanded</option>
+          </select>
+        </label>
+        <label>
+          Size
+          <input type="number" min="1" defaultValue={text.size} onBlur={numberPatch("size")} />
+        </label>
+        <label>
+          Tracking
+          <input
+            type="number"
+            defaultValue={text.letter_spacing}
+            onBlur={numberPatch("letter_spacing")}
+          />
+        </label>
+      </div>
+      <label className="text-arc-toggle">
+        <input
+          type="checkbox"
+          checked={!!text.arc}
+          onChange={(event) =>
+            onEdit({
+              arc: event.currentTarget.checked
+                ? { radius: Math.max(100, text.size * 2), angle: -90, direction: "clockwise" }
+                : null,
+            })
+          }
+        />
+        Arc text
+      </label>
+      {text.arc ? (
+        <div className="text-control-grid">
+          <label>
+            Radius
+            <input
+              type="number"
+              min="1"
+              defaultValue={text.arc.radius}
+              onBlur={arcNumberPatch("radius")}
+            />
+          </label>
+          <label>
+            Angle
+            <input type="number" defaultValue={text.arc.angle} onBlur={arcNumberPatch("angle")} />
+          </label>
+          <label>
+            Direction
+            <select
+              value={text.arc.direction}
+              onChange={(event) =>
+                onEdit({
+                  arc: {
+                    direction: event.currentTarget.value as "clockwise" | "counterclockwise",
+                  },
+                })
+              }
+            >
+              <option value="clockwise">Clockwise</option>
+              <option value="counterclockwise">Counterclockwise</option>
+            </select>
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Right 320px panel: layer list (drag to reorder, × to delete) + transform readout. */
@@ -141,6 +265,7 @@ export function LayerPanel({
   onDelete,
   onToggleAdjust,
   onToggleVisible,
+  onEditText,
   onReorder,
   err,
   selLayer,
@@ -227,6 +352,13 @@ export function LayerPanel({
           <b>{selLayer.name || selLayer.id}</b> — {selLayer.type}
           <br />
           <Readout layer={selLayer} />
+          {selLayer.type === "text" ? (
+            <TextControls
+              key={JSON.stringify(selLayer.text)}
+              layer={selLayer}
+              onEdit={(patch) => onEditText(selLayer.id, patch)}
+            />
+          ) : null}
         </div>
       ) : null}
       <div className="hint">

@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { LayerBox } from "../api";
+import type { AlignmentGuide } from "../lib/geometry";
 import { corners, handlePos } from "../lib/geometry";
 
 const CORNER_LABELS = ["tl", "tr", "br", "bl"] as const;
@@ -9,6 +10,7 @@ interface OverlayProps {
   canvasWidth: number;
   canvasHeight: number;
   selBox: LayerBox | null;
+  guides: AlignmentGuide[];
   k: number;
   onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (e: ReactPointerEvent<SVGSVGElement>) => void;
@@ -21,6 +23,7 @@ export function Overlay({
   canvasWidth,
   canvasHeight,
   selBox,
+  guides,
   k,
   onPointerDown,
   onPointerMove,
@@ -41,6 +44,17 @@ export function Overlay({
       role="presentation"
     >
       <title>Selection overlay</title>
+      {guides.map((guide) => (
+        <line
+          key={`${guide.axis}-${guide.position}-${guide.kind}`}
+          className={`alignment-guide ${guide.kind}`}
+          x1={guide.axis === "x" ? guide.position : 0}
+          y1={guide.axis === "y" ? guide.position : 0}
+          x2={guide.axis === "x" ? guide.position : canvasWidth}
+          y2={guide.axis === "y" ? guide.position : canvasHeight}
+          strokeWidth={1.25 * k}
+        />
+      ))}
       {selBox ? (
         <g transform={`rotate(${selBox.rotation} ${selBox.pivotx} ${selBox.pivoty})`}>
           <rect

@@ -93,7 +93,8 @@ function layerSummary(l: Layer): string {
     }
     case "text": {
       const content = l.text.content.replaceAll("\n", "\\n").slice(0, 28);
-      return `'${content}' font=${l.text.font} size=${l.text.size}`;
+      const arc = l.text.arc ? ` arc=${l.text.arc.radius}@${l.text.arc.angle}` : "";
+      return `'${content}' font=${l.text.font} size=${l.text.size}${arc}`;
     }
   }
 }

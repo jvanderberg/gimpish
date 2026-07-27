@@ -21,6 +21,18 @@ export interface Size {
   h: number;
 }
 
+export interface AlignmentGuide {
+  axis: "x" | "y";
+  position: number;
+  kind: "canvas-center" | "object-center" | "edge";
+}
+
+export interface SnapMoveResult {
+  dx: number;
+  dy: number;
+  guides: AlignmentGuide[];
+}
+
 let stampCounter = 0;
 
 /** A stable per-gesture tag used to bust the preview/ghost image caches. */
@@ -116,6 +128,119 @@ export function corners(b: LayerBox): Point[] {
     { x: -hw, y: hh },
   ];
   return offsets.map((o) => rotAboutPivot(b, b.cx + o.x, b.cy + o.y));
+}
+
+/** Axis-aligned visual bounds of a layer, including its rotation. */
+export function boxBounds(b: LayerBox): {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+} {
+  const points = corners(b);
+  return {
+    left: Math.min(...points.map((point) => point.x)),
+    right: Math.max(...points.map((point) => point.x)),
+    top: Math.min(...points.map((point) => point.y)),
+    bottom: Math.max(...points.map((point) => point.y)),
+  };
+}
+
+interface SnapCandidate {
+  delta: number;
+  guide: AlignmentGuide;
+  priority: number;
+}
+
+function bestCandidate(candidates: SnapCandidate[], threshold: number): SnapCandidate | undefined {
+  return candidates
+    .filter((candidate) => Math.abs(candidate.delta) <= threshold)
+    .sort(
+      (a, b) =>
+        Math.abs(a.delta) - Math.abs(b.delta) ||
+        a.priority - b.priority ||
+        a.guide.position - b.guide.position,
+    )[0];
+}
+
+/**
+ * Snap a moving layer to canvas center lines and to other layer centers and
+ * corresponding visual edges. The threshold is in canvas pixels.
+ */
+export function snapMove(
+  box: LayerBox,
+  rawDx: number,
+  rawDy: number,
+  targets: LayerBox[],
+  canvas: { width: number; height: number },
+  threshold: number,
+): SnapMoveResult {
+  const moving = boxBounds(box);
+  const movingCenterX = (moving.left + moving.right) / 2;
+  const movingCenterY = (moving.top + moving.bottom) / 2;
+  const xCandidates: SnapCandidate[] = [
+    {
+      delta: canvas.width / 2 - (movingCenterX + rawDx),
+      guide: { axis: "x", position: canvas.width / 2, kind: "canvas-center" },
+      priority: 0,
+    },
+  ];
+  const yCandidates: SnapCandidate[] = [
+    {
+      delta: canvas.height / 2 - (movingCenterY + rawDy),
+      guide: { axis: "y", position: canvas.height / 2, kind: "canvas-center" },
+      priority: 0,
+    },
+  ];
+
+  for (const target of targets) {
+    if (target.id === box.id) continue;
+    const bounds = boxBounds(target);
+    const targetCenterX = (bounds.left + bounds.right) / 2;
+    const targetCenterY = (bounds.top + bounds.bottom) / 2;
+    xCandidates.push(
+      {
+        delta: targetCenterX - (movingCenterX + rawDx),
+        guide: { axis: "x", position: targetCenterX, kind: "object-center" },
+        priority: 1,
+      },
+      {
+        delta: bounds.left - (moving.left + rawDx),
+        guide: { axis: "x", position: bounds.left, kind: "edge" },
+        priority: 2,
+      },
+      {
+        delta: bounds.right - (moving.right + rawDx),
+        guide: { axis: "x", position: bounds.right, kind: "edge" },
+        priority: 2,
+      },
+    );
+    yCandidates.push(
+      {
+        delta: targetCenterY - (movingCenterY + rawDy),
+        guide: { axis: "y", position: targetCenterY, kind: "object-center" },
+        priority: 1,
+      },
+      {
+        delta: bounds.top - (moving.top + rawDy),
+        guide: { axis: "y", position: bounds.top, kind: "edge" },
+        priority: 2,
+      },
+      {
+        delta: bounds.bottom - (moving.bottom + rawDy),
+        guide: { axis: "y", position: bounds.bottom, kind: "edge" },
+        priority: 2,
+      },
+    );
+  }
+
+  const x = bestCandidate(xCandidates, threshold);
+  const y = bestCandidate(yCandidates, threshold);
+  return {
+    dx: rawDx + (x?.delta ?? 0),
+    dy: rawDy + (y?.delta ?? 0),
+    guides: [x?.guide, y?.guide].filter((guide): guide is AlignmentGuide => Boolean(guide)),
+  };
 }
 
 /** Apply an in-flight drag gesture to its box for live overlay rendering. */

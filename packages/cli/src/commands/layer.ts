@@ -179,6 +179,83 @@ export function opacityAction(layerId: string, value: number, opts: { scene: str
   return saved(doc, `${layerId}: opacity=${clamped}`);
 }
 
+export function textEditAction(
+  layerId: string,
+  opts: {
+    content?: string;
+    x?: number;
+    y?: number;
+    font?: string;
+    size?: number;
+    weight?: string;
+    stretch?: string;
+    fill?: string;
+    letterSpacing?: number;
+    arcRadius?: number;
+    arcAngle?: number;
+    arcDirection?: string;
+    noArc?: boolean;
+    scene: string;
+  },
+): string {
+  const doc = loadOrFail(opts.scene);
+  const layer = findLayer(doc.scene, layerId);
+  if (layer.type !== "text") throw new CliError("text editing applies to text layers");
+  if (opts.fill !== undefined) parseColor(opts.fill);
+  const stretches = [
+    "ultra-condensed",
+    "extra-condensed",
+    "condensed",
+    "semi-condensed",
+    "normal",
+    "semi-expanded",
+    "expanded",
+    "extra-expanded",
+    "ultra-expanded",
+  ] as const;
+  if (
+    opts.stretch !== undefined &&
+    !stretches.includes(opts.stretch as (typeof stretches)[number])
+  ) {
+    throw new CliError(`stretch must be one of: ${stretches.join("|")}`);
+  }
+  if (opts.size !== undefined && opts.size <= 0) throw new CliError("text size must be > 0");
+  if (opts.arcRadius !== undefined && opts.arcRadius <= 0) {
+    throw new CliError("arc radius must be > 0");
+  }
+  if (
+    opts.arcDirection !== undefined &&
+    opts.arcDirection !== "clockwise" &&
+    opts.arcDirection !== "counterclockwise"
+  ) {
+    throw new CliError("arc direction must be clockwise|counterclockwise");
+  }
+  const text = layer.text;
+  if (opts.content !== undefined) text.content = opts.content;
+  if (opts.x !== undefined) text.x = opts.x;
+  if (opts.y !== undefined) text.y = opts.y;
+  if (opts.font !== undefined) text.font = opts.font;
+  if (opts.size !== undefined) text.size = opts.size;
+  if (opts.weight !== undefined) text.weight = opts.weight;
+  if (opts.stretch !== undefined) text.stretch = opts.stretch as typeof text.stretch;
+  if (opts.fill !== undefined) text.fill = opts.fill;
+  if (opts.letterSpacing !== undefined) text.letter_spacing = opts.letterSpacing;
+  if (opts.noArc) {
+    text.arc = undefined;
+  } else if (
+    opts.arcRadius !== undefined ||
+    opts.arcAngle !== undefined ||
+    opts.arcDirection !== undefined
+  ) {
+    text.arc = {
+      radius: opts.arcRadius ?? text.arc?.radius ?? 400,
+      angle: opts.arcAngle ?? text.arc?.angle ?? -90,
+      direction: opts.arcDirection ?? text.arc?.direction ?? "clockwise",
+    };
+  }
+  return saved(doc, `${layerId}: text updated${text.arc ? ` arc=${g(text.arc.radius)}` : ""}`);
+}
+
 export function blurAction(layerId: string, sigma: number, opts: { scene: string }): string {
   if (sigma < 0) throw new CliError("blur sigma must be >= 0");
   const doc = loadOrFail(opts.scene);
@@ -465,6 +542,26 @@ export function registerLayerCommands(program: Command): void {
       .argument("<id>")
       .argument("<value>", "0.0–1.0", parseNum),
   ).action((id, value, opts) => console.log(opacityAction(id, value, opts)));
+
+  sceneOption(
+    layer
+      .command("text")
+      .description("Edit a native text layer, including circular arc layout.")
+      .argument("<id>")
+      .option("--content <text>", "Replace text content.")
+      .option("--x <n>", "Text anchor/circle-center x.", parseNum)
+      .option("--y <n>", "Text anchor/circle-center y.", parseNum)
+      .option("--font <family>", "CSS font family.")
+      .option("--size <n>", "Font size.", parseNum)
+      .option("--weight <weight>", "Font weight.")
+      .option("--stretch <stretch>", "CSS font stretch, e.g. condensed.")
+      .option("--fill <color>", "Text fill color.")
+      .option("--letter-spacing <n>", "Letter spacing.", parseNum)
+      .option("--arc-radius <n>", "Arc radius; enables arc layout.", parseNum)
+      .option("--arc-angle <deg>", "Arc anchor angle: -90=top, 0=right.", parseNum)
+      .option("--arc-direction <direction>", "clockwise|counterclockwise")
+      .option("--no-arc", "Return to straight text."),
+  ).action((id, opts) => console.log(textEditAction(id, opts)));
 
   sceneOption(
     layer

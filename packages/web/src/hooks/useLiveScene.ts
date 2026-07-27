@@ -1,25 +1,42 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import {
-  fetchGeometry,
-  fetchHistory,
-  fetchScene,
-  type Geometry,
-  type HistoryDepths,
-  type Scene,
-} from "../api";
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { fetchHistory, fetchScene, type HistoryDepths, type Scene } from "../api";
+
+export type VisibilityOverrides = Readonly<Record<string, boolean>>;
+
+/** Keep pending local visibility choices authoritative across watcher refreshes. */
+export function applyVisibilityOverrides(
+  scene: Scene | null,
+  overrides: VisibilityOverrides,
+): Scene | null {
+  if (!scene || Object.keys(overrides).length === 0) return scene;
+  return {
+    ...scene,
+    layers: scene.layers.map((layer) => {
+      const visible = overrides[layer.id];
+      return typeof visible === "boolean" ? { ...layer, visible } : layer;
+    }),
+  };
+}
 
 export interface LiveScene {
   scene: Scene | null;
-  geometry: Geometry;
   history: HistoryDepths;
   err: string | null;
   setErr: Dispatch<SetStateAction<string | null>>;
   ts: number;
   live: boolean;
   refresh: () => Promise<void>;
+  setVisibilityOverride: (id: string, visible: boolean) => void;
+  clearVisibilityOverride: (id: string, expected: boolean) => void;
 }
 
-const EMPTY_GEOMETRY: Geometry = { canvas: { width: 0, height: 0 }, boxes: [] };
 const EMPTY_HISTORY: HistoryDepths = { undo: 0, redo: 0 };
 
 function errorMessage(e: unknown): string {
@@ -27,13 +44,13 @@ function errorMessage(e: unknown): string {
 }
 
 /**
- * Loads /api/scene + /api/geometry, keeps them fresh over a reconnecting
+ * Loads the scene and history, keeps them fresh over a reconnecting
  * WebSocket (the server pushes a reload message whenever scene.json
  * changes), and hands back a cache-busting timestamp for preview URLs.
  */
 export function useLiveScene(): LiveScene {
-  const [scene, setScene] = useState<Scene | null>(null);
-  const [geometry, setGeometry] = useState<Geometry>(EMPTY_GEOMETRY);
+  const [serverScene, setServerScene] = useState<Scene | null>(null);
+  const [visibilityOverrides, setVisibilityOverrides] = useState<VisibilityOverrides>({});
   const [history, setHistory] = useState<HistoryDepths>(EMPTY_HISTORY);
   const [err, setErr] = useState<string | null>(null);
   const [ts, setTs] = useState<number>(() => Date.now());
@@ -41,9 +58,8 @@ export function useLiveScene(): LiveScene {
 
   const refresh = useCallback(async () => {
     try {
-      const [s, g, h] = await Promise.all([fetchScene(), fetchGeometry(), fetchHistory()]);
-      setScene(s);
-      setGeometry(g);
+      const [s, h] = await Promise.all([fetchScene(), fetchHistory()]);
+      setServerScene(s);
       setHistory(h);
       setErr(null);
     } catch (e) {
@@ -83,5 +99,33 @@ export function useLiveScene(): LiveScene {
     };
   }, [refresh]);
 
-  return { scene, geometry, history, err, setErr, ts, live, refresh };
+  const scene = useMemo(
+    () => applyVisibilityOverrides(serverScene, visibilityOverrides),
+    [serverScene, visibilityOverrides],
+  );
+
+  const setVisibilityOverride = useCallback((id: string, visible: boolean) => {
+    setVisibilityOverrides((current) => ({ ...current, [id]: visible }));
+  }, []);
+
+  const clearVisibilityOverride = useCallback((id: string, expected: boolean) => {
+    setVisibilityOverrides((current) => {
+      if (current[id] !== expected) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  return {
+    scene,
+    history,
+    err,
+    setErr,
+    ts,
+    live,
+    refresh,
+    setVisibilityOverride,
+    clearVisibilityOverride,
+  };
 }

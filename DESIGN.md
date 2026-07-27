@@ -153,8 +153,9 @@ JSON is the wire format and the agent's state representation. Positions and size
 - `shape` — `rect` | `ellipse`, with `rect` bounds, `fill`, `stroke`, `stroke_width`.
 - `gradient` — `linear` | `radial`, `anchor` or `angle`, `stops[]`.
 - `arrow` — canvas-space tail/tip coordinates, fill color, width, head size, stroke.
-- `text` — content, position, font, size, weight/style, fill color or gradient,
-  stroke, drop shadow, line height, letter spacing, alignment, rotation.
+- `text` — content, position, font, size, weight/stretch/style, fill color or
+  gradient, stroke, drop shadow, line height, letter spacing, alignment,
+  rotation, and optional circular arc radius/angle/direction.
 
 ### Masks
 A `mask` on a layer is one of:
@@ -236,7 +237,9 @@ gimpish draw text     TEXT --x --y [--font NAME] [--size N] [--weight W] \
                       [--fill "#..."] [--gradient-stops "0:#..., 1:#..."] \
                       [--stroke "#..."] [--stroke-width N] \
                       [--shadow-color "#..."] [--shadow-angle DEG] \
-                      [--shadow-distance N] [--shadow-blur N]
+                      [--shadow-distance N] [--shadow-blur N] \
+                      [--arc-radius N] [--arc-angle DEG] \
+                      [--arc-direction clockwise|counterclockwise]
 gimpish draw gradient --kind linear|radial [--anchor top-left|...] [--angle DEG] \
                       --stops "0:#000000ff, 1:#00000000" [--over <id>]
 ```

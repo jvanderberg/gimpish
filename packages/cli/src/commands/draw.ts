@@ -119,6 +119,7 @@ export function textAction(
     size: number;
     weight: string;
     style: string;
+    stretch?: string;
     align: string;
     fill: string;
     gradientStops?: string;
@@ -135,6 +136,9 @@ export function textAction(
     lineHeight: number;
     letterSpacing: number;
     rotation: number;
+    arcRadius?: number;
+    arcAngle?: number;
+    arcDirection?: string;
     over?: string;
     name?: string;
     scene: string;
@@ -146,8 +150,30 @@ export function textAction(
   if (opts.style !== "normal" && opts.style !== "italic" && opts.style !== "oblique") {
     throw new CliError("style must be normal|italic|oblique");
   }
+  const stretches = [
+    "ultra-condensed",
+    "extra-condensed",
+    "condensed",
+    "semi-condensed",
+    "normal",
+    "semi-expanded",
+    "expanded",
+    "extra-expanded",
+    "ultra-expanded",
+  ] as const;
+  const stretch = opts.stretch ?? "normal";
+  if (!stretches.includes(stretch as (typeof stretches)[number])) {
+    throw new CliError(`stretch must be one of: ${stretches.join("|")}`);
+  }
   if (opts.gradientKind !== "linear" && opts.gradientKind !== "radial") {
     throw new CliError("gradient kind must be linear|radial");
+  }
+  const arcDirection = opts.arcDirection ?? "clockwise";
+  if (arcDirection !== "clockwise" && arcDirection !== "counterclockwise") {
+    throw new CliError("arc direction must be clockwise|counterclockwise");
+  }
+  if (opts.arcRadius !== undefined && opts.arcRadius <= 0) {
+    throw new CliError("arc radius must be > 0");
   }
   parseColor(opts.fill);
   if (opts.stroke) parseColor(opts.stroke);
@@ -160,6 +186,7 @@ export function textAction(
     size: opts.size,
     weight: opts.weight,
     style: opts.style,
+    stretch: stretch as TextSpec["stretch"],
     align: opts.align,
     fill: opts.fill,
     stroke: opts.stroke ?? null,
@@ -168,6 +195,13 @@ export function textAction(
     letter_spacing: opts.letterSpacing,
     rotation: opts.rotation,
   };
+  if (opts.arcRadius !== undefined) {
+    text.arc = {
+      radius: opts.arcRadius,
+      angle: opts.arcAngle ?? -90,
+      direction: arcDirection,
+    };
+  }
   if (opts.gradientStops) {
     text.gradient = {
       kind: opts.gradientKind,
@@ -322,6 +356,7 @@ export function registerDrawCommands(program: Command): void {
       .option("--size <n>", "Font size in canvas pixels.", parseNum, 64)
       .option("--weight <weight>", "Font weight, e.g. 400, 700, bold.", "700")
       .option("--style <style>", "normal|italic|oblique", "normal")
+      .option("--stretch <stretch>", "CSS font stretch, e.g. condensed.", "normal")
       .option("--align <align>", "left|center|right", "left")
       .option("--fill <color>", "Text fill color.", "#ffffffff")
       .option("--gradient-stops <stops>", "'0:#fff, 1:#888'")
@@ -338,6 +373,9 @@ export function registerDrawCommands(program: Command): void {
       .option("--line-height <n>", "Line height multiplier.", parseNum, 1.15)
       .option("--letter-spacing <n>", "Letter spacing.", parseNum, 0)
       .option("--rotation <deg>", "Rotation in degrees.", parseNum, 0)
+      .option("--arc-radius <n>", "Arc radius; x/y becomes the circle center.", parseNum)
+      .option("--arc-angle <deg>", "Arc anchor angle: -90=top, 0=right.", parseNum, -90)
+      .option("--arc-direction <direction>", "clockwise|counterclockwise", "clockwise")
       .option("--over <id>", "Insert above this layer id.")
       .option("--name <name>", "Layer name/id hint."),
   ).action((content, opts) => console.log(textAction(content, opts)));

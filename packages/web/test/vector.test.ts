@@ -5,8 +5,9 @@ import {
   radialGradientGeometry,
 } from "@gimpish/core/model";
 import { describe, expect, it } from "vitest";
-import { sceneRendersResolutionIndependently } from "../src/electron/render";
-import { canvasFontFamily, premultiplyBlendPixels } from "../src/electron/vector";
+import { sceneRendersResolutionIndependently } from "../src/render";
+import { arcGlyphLayout, type TextContext } from "../src/render/text";
+import { canvasFontFamily, premultiplyBlendPixels } from "../src/render/vector";
 
 describe("browser vector parity", () => {
   it("leaves CSS generic font families unquoted", () => {
@@ -50,6 +51,35 @@ describe("browser vector parity", () => {
     const pixels = new Uint8ClampedArray([43, 182, 115, 112, 200, 100, 50, 0]);
     premultiplyBlendPixels(pixels, 0.85);
     expect([...pixels]).toEqual([16, 68, 43, 95, 0, 0, 0, 0]);
+  });
+
+  it("centers glyph advances clockwise around a text arc", () => {
+    const scene = parseScene({
+      canvas: { width: 200, height: 200 },
+      layers: [
+        {
+          id: "arc",
+          type: "text",
+          text: {
+            content: "AB",
+            x: 100,
+            y: 100,
+            align: "center",
+            arc: { radius: 100, angle: -90, direction: "clockwise" },
+          },
+        },
+      ],
+    });
+    const layer = scene.layers[0];
+    if (layer?.type !== "text") throw new Error("expected text");
+    const context = { measureText: () => ({ width: 10 }) } as unknown as TextContext;
+    const glyphs = arcGlyphLayout(context, layer.text);
+    expect(glyphs.map((glyph) => glyph.text)).toEqual(["A", "B"]);
+    expect(glyphs[0]?.x).toBeCloseTo(-4.998, 2);
+    expect(glyphs[1]?.x).toBeCloseTo(4.998, 2);
+    expect(glyphs[0]?.y).toBeCloseTo(-99.875, 2);
+    expect(glyphs[0]?.rotation).toBeCloseTo(-0.05, 3);
+    expect(glyphs[1]?.rotation).toBeCloseTo(0.05, 3);
   });
 
   it("recognizes vector-only scenes without counting hidden raster references", () => {

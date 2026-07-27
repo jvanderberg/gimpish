@@ -5,7 +5,7 @@ import type {
   RefObject,
 } from "react";
 import type { Canvas, HistoryDepths, LayerBox } from "../api";
-import type { Size } from "../lib/geometry";
+import type { AlignmentGuide, Size } from "../lib/geometry";
 import { ICON_DOWNLOAD, ICON_IMPORT, ICON_REDO, ICON_REFRESH, ICON_UNDO } from "./icons";
 import { Overlay } from "./Overlay";
 
@@ -24,6 +24,7 @@ interface StageProps {
   ghostSrc: string | null;
   ghostStyle: CSSProperties;
   selBox: LayerBox | null;
+  guides: AlignmentGuide[];
   k: number;
   live: boolean;
   dropActive: boolean;
@@ -58,6 +59,7 @@ export function Stage({
   ghostSrc,
   ghostStyle,
   selBox,
+  guides,
   k,
   live,
   dropActive,
@@ -189,6 +191,7 @@ export function Stage({
             canvasWidth={canvas?.width ?? 1}
             canvasHeight={canvas?.height ?? 1}
             selBox={selBox}
+            guides={guides}
             k={k}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}

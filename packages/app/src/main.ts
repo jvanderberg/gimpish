@@ -611,6 +611,76 @@ function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "edit_text",
+    {
+      description:
+        "Edit a native text layer. Arc radius enables circular layout around x/y; null returns to straight text.",
+      inputSchema: {
+        layerId: z.string(),
+        content: z.string().optional(),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        font: z.string().optional(),
+        size: z.number().positive().optional(),
+        weight: z.string().optional(),
+        stretch: z
+          .enum([
+            "ultra-condensed",
+            "extra-condensed",
+            "condensed",
+            "semi-condensed",
+            "normal",
+            "semi-expanded",
+            "expanded",
+            "extra-expanded",
+            "ultra-expanded",
+          ])
+          .optional(),
+        fill: z.string().optional(),
+        letterSpacing: z.number().optional(),
+        arc: z
+          .object({
+            radius: z.number().positive().optional(),
+            angle: z.number().optional(),
+            direction: z.enum(["clockwise", "counterclockwise"]).optional(),
+          })
+          .nullable()
+          .optional(),
+      },
+    },
+    async ({ layerId, content, x, y, font, size, weight, stretch, fill, letterSpacing, arc }) => {
+      const arcPatch =
+        arc === null
+          ? null
+          : arc === undefined
+            ? undefined
+            : {
+                ...(arc.radius === undefined ? {} : { radius: arc.radius }),
+                ...(arc.angle === undefined ? {} : { angle: arc.angle }),
+                ...(arc.direction === undefined ? {} : { direction: arc.direction }),
+              };
+      const command: DocumentCommand = {
+        kind: "edit-text",
+        layerId,
+        patch: {
+          ...(content === undefined ? {} : { content }),
+          ...(x === undefined ? {} : { x }),
+          ...(y === undefined ? {} : { y }),
+          ...(font === undefined ? {} : { font }),
+          ...(size === undefined ? {} : { size }),
+          ...(weight === undefined ? {} : { weight }),
+          ...(stretch === undefined ? {} : { stretch }),
+          ...(fill === undefined ? {} : { fill }),
+          ...(letterSpacing === undefined ? {} : { letter_spacing: letterSpacing }),
+          ...(arcPatch === undefined ? {} : { arc: arcPatch }),
+        },
+      };
+      const response = await sendRendererRequest({ kind: "apply-command", command });
+      return toolText({ revision: document.revision, receipt: response.receipt });
+    },
+  );
+
+  server.registerTool(
     "export_png",
     {
       description:

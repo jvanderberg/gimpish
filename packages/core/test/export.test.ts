@@ -1,13 +1,10 @@
-import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import type { Canvas, ExportSettings, SceneDoc } from "../src/index.ts";
+import type { Canvas, ExportSettings } from "../src/index.ts";
 import {
   clampCrop,
   coverCrop,
   EXPORT_PRESETS,
   isExportPreset,
-  parseScene,
-  renderExport,
   resolveExportCrop,
 } from "../src/index.ts";
 
@@ -15,24 +12,6 @@ const CANVAS: Canvas = { width: 2000, height: 1000, background: "#3355aaff" };
 
 function settings(over: Partial<ExportSettings> = {}): ExportSettings {
   return { width: 640, height: 360, format: "png", quality: 90, crop: null, preset: null, ...over };
-}
-
-function boxScene(): SceneDoc {
-  return {
-    path: "/tmp/export-test/scene.json", // no file IO for shape-only scenes
-    scene: parseScene({
-      canvas: CANVAS,
-      layers: [
-        {
-          id: "box",
-          type: "shape",
-          shape: "rect",
-          rect: { x: 200, y: 200, w: 400, h: 400 },
-          fill: "#ff0000ff",
-        },
-      ],
-    }),
-  };
 }
 
 describe("EXPORT_PRESETS", () => {
@@ -79,25 +58,5 @@ describe("resolveExportCrop", () => {
     // square target on a 2:1 canvas -> full-height 1000×1000, centered.
     const crop = resolveExportCrop(CANVAS, settings({ width: 1000, height: 1000 }));
     expect(crop).toEqual({ x: 500, y: 0, w: 1000, h: 1000 });
-  });
-});
-
-describe("renderExport", () => {
-  it("outputs exactly the target pixels", async () => {
-    const buf = await renderExport(boxScene(), settings({ width: 640, height: 360 }));
-    const meta = await sharp(buf).metadata();
-    expect([meta.width, meta.height]).toEqual([640, 360]);
-    expect(meta.format).toBe("png");
-  });
-
-  it("encodes jpg (flattened, no alpha) at the target size", async () => {
-    const buf = await renderExport(
-      boxScene(),
-      settings({ width: 200, height: 200, format: "jpg", crop: { x: 0, y: 0, w: 1000, h: 1000 } }),
-    );
-    const meta = await sharp(buf).metadata();
-    expect(meta.format).toBe("jpeg");
-    expect(meta.hasAlpha).toBe(false);
-    expect([meta.width, meta.height]).toEqual([200, 200]);
   });
 });

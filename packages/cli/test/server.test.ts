@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ArrowLayer, ImageLayer, LayerBox, Scene, ShapeLayer } from "@gimpish/core";
+import type { ArrowLayer, ImageLayer, Scene, ShapeLayer } from "@gimpish/core";
 import type { FastifyInstance } from "fastify";
 import { unzipSync, zipSync } from "fflate";
 import sharp from "sharp";
@@ -158,6 +158,20 @@ describe("GET /api/scene", () => {
   });
 });
 
+describe("GET /api/asset", () => {
+  it("serves an exact asset reference for the browser renderer", async () => {
+    const res = await app.inject({ url: "/api/asset?path=tiny.png" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/png");
+    expectPng(res.rawPayload);
+  });
+
+  it("does not expose files outside the scene asset allowlist", async () => {
+    const res = await app.inject({ url: "/api/asset?path=scene.json" });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
 describe("GET /api/preview.png", () => {
   it("returns a PNG capped at max", async () => {
     const res = await app.inject({ url: "/api/preview.png?max=100" });
@@ -174,58 +188,6 @@ describe("GET /api/preview.png", () => {
     expect(hidden.statusCode).toBe(200);
     expectPng(hidden.rawPayload);
     expect(Buffer.compare(hidden.rawPayload, full.rawPayload)).not.toBe(0);
-  });
-});
-
-describe("GET /api/geometry", () => {
-  it("returns boxes for all visible layers with capability flags", async () => {
-    const res = await app.inject({ url: "/api/geometry" });
-    expect(res.statusCode).toBe(200);
-    const body = res.json() as { canvas: { width: number; height: number }; boxes: LayerBox[] };
-    expect(body.canvas).toEqual({ width: 200, height: 120 });
-    expect(body.boxes.map((b) => b.id)).toEqual([
-      "panel",
-      "glow",
-      "wash",
-      "title",
-      "point",
-      "photo",
-    ]);
-
-    const byId = new Map(body.boxes.map((b) => [b.id, b]));
-    const flags = (id: string) => {
-      const b = byId.get(id);
-      if (!b) throw new Error(`no box for ${id}`);
-      return { move: b.move, rotate: b.rotate, scale: b.scale };
-    };
-    expect(flags("glow")).toEqual({ move: true, rotate: false, scale: false }); // radial gradient
-    expect(flags("wash")).toEqual({ move: false, rotate: true, scale: false }); // linear gradient
-    for (const id of ["panel", "title", "point", "photo"]) {
-      expect(flags(id)).toEqual({ move: true, rotate: true, scale: true });
-    }
-
-    // Image box math: natural 8x6 at scale 2, top-left (5, 5).
-    const photo = byId.get("photo");
-    expect(photo?.w).toBeCloseTo(IMG_W * 2);
-    expect(photo?.h).toBeCloseTo(IMG_H * 2);
-    expect(photo?.cx).toBeCloseTo(5 + (IMG_W * 2) / 2);
-    expect(photo?.cy).toBeCloseTo(5 + (IMG_H * 2) / 2);
-
-    // Linear gradient indicator carries the gradient angle.
-    expect(byId.get("wash")?.rotation).toBeCloseTo(30);
-  });
-
-  it("excludes invisible layers", async () => {
-    const scene = readSceneFromDisk();
-    const panel = scene.layers.find((l) => l.id === "panel");
-    if (!panel) throw new Error("missing panel layer");
-    panel.visible = false;
-    writeFileSync(scenePath, JSON.stringify(scene));
-
-    const res = await app.inject({ url: "/api/geometry" });
-    const body = res.json() as { boxes: LayerBox[] };
-    expect(body.boxes.map((b) => b.id)).not.toContain("panel");
-    expect(body.boxes.map((b) => b.id)).toContain("glow");
   });
 });
 
@@ -440,6 +402,31 @@ describe("POST /api/layer/:id/visible", () => {
       payload: { visible: false },
     });
     expect(missing.statusCode).toBe(404);
+  });
+});
+
+describe("POST /api/layer/:id/text", () => {
+  it("edits native text and enables or removes circular layout", async () => {
+    const arc = await app.inject({
+      method: "POST",
+      url: "/api/layer/title/text",
+      payload: { content: "PALISADES", arc: { radius: 300, angle: -90 } },
+    });
+    expect(arc.statusCode).toBe(200);
+    let title = readSceneFromDisk().layers.find((layer) => layer.id === "title");
+    expect(title?.type === "text" && title.text).toMatchObject({
+      content: "PALISADES",
+      arc: { radius: 300, angle: -90, direction: "clockwise" },
+    });
+
+    const straight = await app.inject({
+      method: "POST",
+      url: "/api/layer/title/text",
+      payload: { arc: null },
+    });
+    expect(straight.statusCode).toBe(200);
+    title = readSceneFromDisk().layers.find((layer) => layer.id === "title");
+    expect(title?.type === "text" && title.text.arc).toBeUndefined();
   });
 });
 

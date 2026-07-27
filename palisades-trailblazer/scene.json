@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "canvas": {
+    "width": 2000,
+    "height": 1900,
+    "background": "transparent"
+  },
+  "layers": [
+    {
+      "id": "cream-background",
+      "name": "cream-background",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": false,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "cream-background-layer.svg",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "sky-disc",
+      "name": "sky-disc",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "sky-disc-layer.svg",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "dune",
+      "name": "dune",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "dune-layer.svg",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "trail",
+      "name": "trail",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "trail-layer.svg",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scale": 1,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "hiker-woman",
+      "name": "hiker-woman",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "hiker-woman-layer.svg",
+      "transform": {
+        "x": -1122.241054339698,
+        "y": -699.1837749534016,
+        "scale": 1.8396116216614753,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "hiker-man",
+      "name": "hiker-man",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": false,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "hiker-man-layer.svg",
+      "transform": {
+        "x": -253.6041030883789,
+        "y": 180.36090087890625,
+        "scale": 1,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond",
+      "name": "grass-frond",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1177.6234945910658,
+        "y": 860.9466283236713,
+        "scale": 0.9192694749145295,
+        "rotation": 0
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-2",
+      "name": "grass-frond-2",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1215,
+        "y": 871.1,
+        "scale": 0.75,
+        "rotation": 2.9000000000000004
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-3",
+      "name": "grass-frond-3",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1254,
+        "y": 823.5,
+        "scale": 1.1,
+        "rotation": 4.1
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-4",
+      "name": "grass-frond-4",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1299.4896240234375,
+        "y": 876.2146850585938,
+        "scale": 0.85,
+        "rotation": 19.5
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-5",
+      "name": "grass-frond-5",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1399.3052978515625,
+        "y": 902.6709326171875,
+        "scale": 0.95,
+        "rotation": -3.4000000000000004
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-6",
+      "name": "grass-frond-6",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 1448,
+        "y": 941.89,
+        "scale": 0.7,
+        "rotation": 2.9000000000000004
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-7",
+      "name": "grass-frond-7",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 531.651123046875,
+        "y": 1080.9375146484376,
+        "scale": 1,
+        "rotation": -11.3
+      },
+      "mask": null
+    },
+    {
+      "id": "grass-frond-8",
+      "name": "grass-frond-8",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "image",
+      "source": "grass-frond.svg",
+      "transform": {
+        "x": 588.486572265625,
+        "y": 1115.649052734375,
+        "scale": 0.65,
+        "rotation": -3.3000000000000007
+      },
+      "mask": null
+    },
+    {
+      "id": "palisades-wordmark",
+      "name": "palisades-wordmark",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "text",
+      "text": {
+        "content": "PALISADES",
+        "x": 999.5538799348,
+        "y": 1136.2502818298722,
+        "font": "Futura",
+        "size": 246.31977985933503,
+        "weight": "800",
+        "style": "normal",
+        "stretch": "ultra-condensed",
+        "align": "center",
+        "fill": "#3A2412ff",
+        "stroke": null,
+        "stroke_width": 0,
+        "line_height": 1.15,
+        "letter_spacing": 48.69090941557358,
+        "rotation": 0,
+        "arc": {
+          "radius": 800,
+          "angle": -90,
+          "direction": "clockwise"
+        }
+      }
+    },
+    {
+      "id": "trailblazer-wordmark",
+      "name": "trailblazer-wordmark",
+      "opacity": 1,
+      "blend": "normal",
+      "visible": true,
+      "adjustEnabled": true,
+      "type": "text",
+      "text": {
+        "content": "TRAILBLAZER",
+        "x": 1000,
+        "y": 1530.4141372369259,
+        "font": "Futura",
+        "size": 220.19921686726542,
+        "weight": "800",
+        "style": "normal",
+        "stretch": "normal",
+        "align": "center",
+        "fill": "#3A2412ff",
+        "stroke": null,
+        "stroke_width": 0,
+        "line_height": 1.15,
+        "letter_spacing": 0,
+        "rotation": 0
+      }
+    }
+  ]
+}

@@ -23,6 +23,7 @@ import {
   moveAction,
   opacityAction,
   rotateAction,
+  textEditAction,
   transformAction,
   visibleAction,
 } from "../src/commands/layer.ts";
@@ -301,6 +302,49 @@ describe("draw", () => {
         { at: 1, color: "#888888ff" },
       ],
     });
+  });
+
+  it("creates and edits circular native text", () => {
+    const scene = newScene();
+    textAction("PALISADES", {
+      x: 500,
+      y: 400,
+      font: "Futura",
+      size: 120,
+      weight: "800",
+      style: "normal",
+      align: "center",
+      fill: "#3A2412ff",
+      gradientKind: "linear",
+      gradientAngle: 0,
+      strokeWidth: 0,
+      shadowAngle: 45,
+      shadowDistance: 8,
+      shadowBlur: 6,
+      lineHeight: 1.15,
+      letterSpacing: 12,
+      rotation: 0,
+      arcRadius: 360,
+      arcAngle: -90,
+      arcDirection: "clockwise",
+      scene,
+    });
+    let layer = readScene(scene).layers[0];
+    expect(layer?.type === "text" && layer.text.arc).toEqual({
+      radius: 360,
+      angle: -90,
+      direction: "clockwise",
+    });
+
+    textEditAction("text", { arcRadius: 420, arcAngle: -85, scene });
+    layer = readScene(scene).layers[0];
+    expect(layer?.type === "text" && layer.text.arc).toMatchObject({
+      radius: 420,
+      angle: -85,
+    });
+    textEditAction("text", { noArc: true, scene });
+    layer = readScene(scene).layers[0];
+    expect(layer?.type === "text" && layer.text.arc).toBeUndefined();
   });
 
   it("text validates align and style", () => {

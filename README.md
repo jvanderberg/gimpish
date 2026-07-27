@@ -16,7 +16,8 @@ loop or a cloud image service.
 
 - Imports source images as non-destructive layers.
 - Stores all composition state in `scene.json` (a versioned, zod-validated contract).
-- Renders through one sharp/libvips pipeline for preview, export, and the web UI.
+- Renders through one browser-native Canvas/SVG pipeline in Electron, `serve`,
+  and headless CLI output.
 - Supports image, shape, gradient, arrow, and styled text layers, plus opacity,
   blend modes, and layer ordering.
 - Removes image backgrounds locally (U²-Net via onnxruntime; the model is
@@ -85,7 +86,8 @@ While running, the server advertises itself in `.scene_cache/serve.json`
 running server instead of failing with a port conflict. The file is removed on
 shutdown, and a stale one (dead pid) is ignored.
 
-The browser renders through the same pipeline as `preview`/`render`/`export`.
+The browser renders through the same module as `preview`/`render`/`export`;
+CLI output hosts that renderer in a hidden Electron window.
 When `scene.json` or `.scene_cache/` changes, the server pushes a reload over
 WebSocket and the view refreshes — CLI edits appear live.
 
@@ -98,6 +100,8 @@ floats as a live ghost sprite; releasing commits a single delta to `scene.json`.
 In the layer panel, drag rows to reorder the stack (an accent line marks where
 the layer will land) and remove a layer with its × button or the Delete key —
 deleting a layer never touches asset files on disk.
+Selecting a text layer also exposes its content, font, weight, stretch, size,
+tracking, and circular arc radius/angle/direction.
 
 ### Undo / redo
 
@@ -175,6 +179,8 @@ gimpish layer opacity subject 0.65
 gimpish layer blend subject multiply
 gimpish layer blur subject 8         # gaussian sigma in canvas px; 0 removes
 gimpish layer adjust subject --brightness -10 --contrast 20 --saturation -15 --warmth 8
+gimpish layer text headline --arc-radius 420 --arc-angle -90
+gimpish layer text headline --no-arc
 gimpish layer visible subject false
 gimpish layer delete subject
 ```
@@ -201,6 +207,9 @@ gimpish draw text "Gradient Text" --x 500 --y 145 --align center \
   --stroke "#ffffffff" --stroke-width 4 \
   --shadow-color "#00000099" --shadow-angle 45 \
   --shadow-distance 18 --shadow-blur 10
+gimpish draw text "PALISADES" --x 1000 --y 900 --align center \
+  --font Futura --weight 800 --stretch condensed --size 176 \
+  --arc-radius 628 --arc-angle -90 --arc-direction clockwise
 gimpish draw gradient --kind linear --anchor top-left \
   --stops "0:#000000cc, 1:#00000000"
 gimpish draw alpha-gradient --color "#000000" --from 0.75 --to 0 \
@@ -227,8 +236,9 @@ none exists, and scene writes are atomic (write-temp-then-rename).
 - Optional masks: cutout, image, or shape.
 - Shape and gradient definitions.
 - Arrow definitions with canvas-space tail and tip coordinates.
-- Text definitions with font, size, weight, style, fill/gradient, stroke,
-  shadow, alignment, line height, letter spacing, and rotation.
+- Text definitions with font, size, weight, stretch, style, fill/gradient,
+  stroke, shadow, alignment, line height, letter spacing, rotation, and
+  optional circular arc layout.
 
 Example layer:
 
@@ -269,7 +279,9 @@ reordering); edit the JSON directly for batch tweaks to existing values.
   `difference`, `exclusion`, `add`.
 - **Placement semantics**: an image layer's `transform.x/y` is the top-left
   corner of the scaled image; `rotation` is clockwise degrees about its
-  center. Text `x/y` is the anchor point (its meaning follows `--align`);
+  center. Straight text `x/y` is the anchor point (its meaning follows
+  `--align`); arced text uses `x/y` as its circle center and `arc.angle` as
+  the aligned run’s anchor angle;
   arrows use absolute tail/tip coordinates. Prefer `layer fit` over doing
   placement arithmetic yourself.
 - **Rotation direction**: positive = clockwise everywhere (screen-space
@@ -278,11 +290,10 @@ reordering); edit the JSON directly for batch tweaks to existing values.
 ## Repository layout
 
 ```text
-packages/core/    scene schema (zod), geometry, editor ops, sharp render
-                  engine, U²-Net background removal
-packages/cli/     gimpish CLI (commander) + Fastify editor server
-packages/web/     live editor (Vite + React + TypeScript)
-tests/fixtures/   golden renders + scenes for the pixel-parity suite
+packages/core/    scene schema (zod), geometry, editor ops, U²-Net removal
+packages/cli/     CLI + Fastify editor server + hidden Electron host
+packages/web/     canonical Canvas/SVG renderer + React editor surfaces
+tests/fixtures/   shared scenes and assets for renderer integration tests
 examples/         sanitized scene files (shapes, gradients, arrows, text only)
 ```
 
@@ -296,7 +307,7 @@ examples under `examples/`.
 
 ## Design principles
 
-- CLI-first: the command surface is the agent API.
+- Browser-native: Electron owns the canonical Canvas/SVG render pipeline.
 - Non-destructive: source images are referenced, not overwritten.
 - One render path: preview and final output use the same compositor.
 - Semantic placement: commands like `fit --percent 75 --anchor center` avoid
@@ -334,16 +345,18 @@ bundle with the web editor prebuilt, and runs on Node 20.19+.)
 
 ```bash
 npm run check       # biome lint/format + tsc across all packages
-npm test            # vitest: model, CLI, server API, and pixel-parity suites
+npm test            # vitest: model, CLI, server API, and browser-renderer suites
 npm run dev         # vite dev server for the web app (proxies /api to :8765)
 npm run build       # production web bundle (served by gimpish serve)
 ```
 
-### Electron browser-engine branch
+### Electron app and canonical renderer
 
-The experimental Electron app renders and edits the scene directly in the
-Chromium renderer, then persists accepted transactions through a sandboxed
-preload bridge. It also exposes a stateless local MCP endpoint at
+The Electron app renders and edits the scene directly in the canonical Chromium
+renderer, then persists accepted transactions through a sandboxed preload
+bridge. `gimpish serve` runs that same renderer in the user's browser, while
+CLI output uses it in a hidden Electron window. There is no Sharp compositor
+fallback. The app also exposes a stateless local MCP endpoint at
 `http://127.0.0.1:8767/mcp`.
 
 ```bash
@@ -354,16 +367,15 @@ GIMPISH_SCENE=/absolute/path/to/scene.json npm run electron
 ```
 
 MCP tools: `list_documents`, `get_scene`, `set_scene`, `transform_layer`,
-`fit_layer`, `edit_layer`, `reorder_layer`, `remove_background`, `preview`,
+`fit_layer`, `edit_layer`, `edit_text`, `reorder_layer`, `remove_background`, `preview`,
 `export_png`, `save_bundle`, `undo`, and `redo`. Browser-local
 rendering supports native scene and `.gimpish` bundle opening, restricted asset
 import, local move/rotate/scale handles, drag-and-drop layer ordering, layer
 visibility/deletion, undo/redo, masks, blend modes, worker-backed layer
 adjustments, browser-local U²-Net background removal, and crop-aware
 PNG/JPEG/WebP export. Bundle documents use stable recovery workspaces and can be
-repacked from the app or MCP. The existing `gimpish serve` workflow remains
-available while CLI discovery and app-closed routing are migrated.
+repacked from the app or MCP.
 
-The renderer's output is pinned by golden fixtures (`tests/fixtures/`); the
-parity suite requires the render pipeline to reproduce them within tight pixel
-tolerances.
+Renderer tests cover vector resolution independence, browser adjustment
+semantics, served-asset isolation, and end-to-end output through hidden
+Electron.

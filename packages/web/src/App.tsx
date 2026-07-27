@@ -1,28 +1,46 @@
+import { type LayerBox, resolveExportCrop } from "@gimpish/core/model";
 import type { DragEvent as ReactDragEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BUNDLE_URL,
+  browserRenderApi,
   deleteLayer,
+  editText,
   importFile,
   postHistoryOp,
   postTransform,
-  previewUrl,
   reorderLayer,
+  saveExportSettings,
   setLayerVisible,
-  spriteUrl,
   type TransformDelta,
   toggleAdjust,
 } from "./api";
-import { ExportModal } from "./components/ExportModal";
+import { ExportModal, type ExportModalRuntime } from "./components/ExportModal";
 import { LayerPanel } from "./components/LayerPanel";
 import { Stage, type Toast } from "./components/Stage";
 import { useDrag } from "./hooks/useDrag";
 import { useElementSize } from "./hooks/useElementSize";
 import { useLiveScene } from "./hooks/useLiveScene";
 import { applyDragToBox, containBox, ghostStyleFor } from "./lib/geometry";
+import {
+  clearRendererCaches,
+  renderScene as renderBrowserScene,
+  sceneRendersResolutionIndependently,
+} from "./render";
+import { resolveLayerBoxes } from "./render/geometry";
 
 /** True when the drag payload contains OS files (vs an in-page drag). */
 function hasFiles(e: ReactDragEvent): boolean {
   return (e.dataTransfer?.types ?? []).includes("Files");
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 const ARROW_DELTAS: Record<string, [number, number]> = {
@@ -45,7 +63,17 @@ const ZOOM_LABELS: Record<number, string> = {
 };
 
 export function App() {
-  const { scene, geometry, history, err, setErr, ts, live, refresh } = useLiveScene();
+  const {
+    scene,
+    history,
+    err,
+    setErr,
+    ts,
+    live,
+    refresh,
+    setVisibilityOverride,
+    clearVisibilityOverride,
+  } = useLiveScene();
   const [sel, setSel] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const { ref: wrapRef, size: avail } = useElementSize<HTMLDivElement>();
@@ -71,7 +99,24 @@ export function App() {
   const canZoomIn = zoom < (ZOOM_STEPS[ZOOM_STEPS.length - 1] ?? 4);
   const canZoomOut = zoom > (ZOOM_STEPS[0] ?? 0.25);
 
-  const boxes = geometry.boxes;
+  const [boxes, setBoxes] = useState<LayerBox[]>([]);
+  useEffect(() => {
+    if (!scene) {
+      setBoxes([]);
+      return;
+    }
+    let active = true;
+    void resolveLayerBoxes(scene, browserRenderApi)
+      .then((resolved) => {
+        if (active) setBoxes([...resolved.values()]);
+      })
+      .catch((cause: unknown) => {
+        if (active) setErr(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [scene, setErr]);
   const rawSelBox = useMemo(() => boxes.find((b) => b.id === sel) ?? null, [boxes, sel]);
 
   const onCommit = useCallback(
@@ -90,6 +135,8 @@ export function App() {
     selBox: rawSelBox,
     setSel,
     k,
+    canvasWidth: cw,
+    canvasHeight: ch,
     onCommit,
   });
 
@@ -113,8 +160,69 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [rawSelBox, drag, onCommit]);
 
-  const previewSrc = drag ? previewUrl(drag.stamp, drag.id) : previewUrl(ts);
-  const ghostSrc = sel ? spriteUrl(sel, ts) : null;
+  const [previewSrc, setPreviewSrc] = useState("");
+  const [ghostSrc, setGhostSrc] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const ghostUrlRef = useRef<string | null>(null);
+  const renderGeneration = useRef(0);
+
+  // `serve` uses the exact browser-native renderer used by Electron. Scene
+  // changes invalidate asset caches so replaced SVG files hot-reload too.
+  useEffect(() => {
+    if (!scene) return;
+    clearRendererCaches();
+    const generation = renderGeneration.current + 1;
+    renderGeneration.current = generation;
+    const baseScene = drag
+      ? { ...scene, layers: scene.layers.filter((layer) => layer.id !== drag.id) }
+      : scene;
+    const selectedLayer = sel ? scene.layers.find((layer) => layer.id === sel) : undefined;
+    void (async () => {
+      const preview = new OffscreenCanvas(scene.canvas.width, scene.canvas.height);
+      await renderBrowserScene(preview, baseScene, browserRenderApi);
+      const previewBlob = await preview.convertToBlob({ type: "image/png" });
+      const nextPreview = URL.createObjectURL(previewBlob);
+
+      let nextGhost: string | null = null;
+      if (selectedLayer) {
+        const ghost = new OffscreenCanvas(scene.canvas.width, scene.canvas.height);
+        await renderBrowserScene(
+          ghost,
+          {
+            ...scene,
+            canvas: { ...scene.canvas, background: "transparent" },
+            layers: [selectedLayer],
+          },
+          browserRenderApi,
+        );
+        nextGhost = URL.createObjectURL(await ghost.convertToBlob({ type: "image/png" }));
+      }
+
+      if (renderGeneration.current !== generation) {
+        URL.revokeObjectURL(nextPreview);
+        if (nextGhost) URL.revokeObjectURL(nextGhost);
+        return;
+      }
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      if (ghostUrlRef.current) URL.revokeObjectURL(ghostUrlRef.current);
+      previewUrlRef.current = nextPreview;
+      ghostUrlRef.current = nextGhost;
+      setPreviewSrc(nextPreview);
+      setGhostSrc(nextGhost);
+    })().catch((cause: unknown) => {
+      setErr(cause instanceof Error ? cause.message : String(cause));
+    });
+  }, [drag, scene, sel, setErr]);
+
+  useEffect(
+    () => () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      if (ghostUrlRef.current) URL.revokeObjectURL(ghostUrlRef.current);
+      clearRendererCaches();
+    },
+    [],
+  );
+
   const ghostStyle = ghostStyleFor(drag, selBox !== null, k);
 
   // ---- file import (drag-drop + upload button) --------------------------------
@@ -185,13 +293,34 @@ export function App() {
     [pushToast],
   );
 
-  const onToggleVisible = useCallback(
-    (id: string, visible: boolean) => {
-      setLayerVisible(id, visible).catch((e: unknown) => {
-        pushToast(`visibility '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+  const onEditText = useCallback(
+    (id: string, patch: Parameters<typeof editText>[1]) => {
+      editText(id, patch).catch((e: unknown) => {
+        pushToast(`text '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
       });
     },
     [pushToast],
+  );
+
+  const visibilityWrites = useRef(new Map<string, Promise<void>>());
+  const onToggleVisible = useCallback(
+    (id: string, visible: boolean) => {
+      setVisibilityOverride(id, visible);
+      const previous = visibilityWrites.current.get(id) ?? Promise.resolve();
+      const write = previous.catch(() => undefined).then(() => setLayerVisible(id, visible));
+      visibilityWrites.current.set(id, write);
+      void write
+        .catch((e: unknown) => {
+          pushToast(`visibility '${id}': ${e instanceof Error ? e.message : String(e)}`, "err");
+        })
+        .finally(async () => {
+          if (visibilityWrites.current.get(id) !== write) return;
+          visibilityWrites.current.delete(id);
+          await refresh();
+          clearVisibilityOverride(id, visible);
+        });
+    },
+    [clearVisibilityOverride, pushToast, refresh, setVisibilityOverride],
   );
 
   const onHistory = useCallback(
@@ -266,6 +395,44 @@ export function App() {
     [importFiles],
   );
 
+  const exportRuntime = useMemo<ExportModalRuntime | null>(() => {
+    if (!scene || !previewSrc) return null;
+    return {
+      previewSrc,
+      resolutionIndependent: sceneRendersResolutionIndependently(scene),
+      saveSettings: saveExportSettings,
+      async download(settings) {
+        const crop = resolveExportCrop(scene.canvas, settings);
+        const output = new OffscreenCanvas(settings.width, settings.height);
+        await renderBrowserScene(
+          output,
+          scene,
+          browserRenderApi,
+          settings.width,
+          settings.height,
+          crop,
+        );
+        const mimeType =
+          settings.format === "jpg"
+            ? "image/jpeg"
+            : settings.format === "webp"
+              ? "image/webp"
+              : "image/png";
+        const blob = await output.convertToBlob({
+          type: mimeType,
+          quality: settings.quality / 100,
+        });
+        downloadBlob(blob, `scene.${settings.format === "jpg" ? "jpg" : settings.format}`);
+      },
+      async saveBundle() {
+        const link = document.createElement("a");
+        link.href = BUNDLE_URL;
+        link.download = "";
+        link.click();
+      },
+    };
+  }, [previewSrc, scene]);
+
   const layers = scene ? [...scene.layers].reverse() : [];
   const selLayer = scene?.layers.find((l) => l.id === sel) ?? null;
 
@@ -291,6 +458,7 @@ export function App() {
         ghostSrc={ghostSrc}
         ghostStyle={ghostStyle}
         selBox={selBox}
+        guides={drag?.mode === "move" ? (drag.guides ?? []) : []}
         k={k}
         live={live}
         dropActive={dropActive}
@@ -322,12 +490,19 @@ export function App() {
         onDelete={onDelete}
         onToggleAdjust={onToggleAdjust}
         onToggleVisible={onToggleVisible}
+        onEditText={onEditText}
         onReorder={onReorder}
         err={err}
         selLayer={selLayer}
       />
-      {exportOpen && canvas ? (
-        <ExportModal canvas={canvas} scene={scene} ts={ts} onClose={() => setExportOpen(false)} />
+      {exportOpen && canvas && exportRuntime ? (
+        <ExportModal
+          canvas={canvas}
+          scene={scene}
+          ts={ts}
+          runtime={exportRuntime}
+          onClose={() => setExportOpen(false)}
+        />
       ) : null}
     </div>
   );

@@ -70,6 +70,12 @@ const TextShadowSchema = z.object({
   blur: z.number().default(0),
 });
 
+const TextArcSchema = z.object({
+  radius: z.number().positive(),
+  angle: z.number().default(-90), // degrees; 0=right, 90=down, -90=top
+  direction: z.enum(["clockwise", "counterclockwise"]).default("clockwise"),
+});
+
 const TextSpecSchema = z.object({
   content: z.string(),
   x: z.number().default(0),
@@ -78,6 +84,19 @@ const TextSpecSchema = z.object({
   size: z.number().default(64),
   weight: z.string().default("400"),
   style: z.enum(["normal", "italic", "oblique"]).default("normal"),
+  stretch: z
+    .enum([
+      "ultra-condensed",
+      "extra-condensed",
+      "condensed",
+      "semi-condensed",
+      "normal",
+      "semi-expanded",
+      "expanded",
+      "extra-expanded",
+      "ultra-expanded",
+    ])
+    .default("normal"),
   align: z.enum(["left", "center", "right"]).default("left"),
   fill: z.string().default("#ffffffff"),
   gradient: GradientSpecSchema.optional(),
@@ -87,6 +106,8 @@ const TextSpecSchema = z.object({
   line_height: z.number().default(1.15),
   letter_spacing: z.number().default(0),
   rotation: z.number().default(0),
+  // When present, x/y is the circle center and align anchors the run at angle.
+  arc: TextArcSchema.optional(),
 });
 
 const AdjustSchema = z.object({
@@ -216,6 +237,7 @@ export type Adjust = z.infer<typeof AdjustSchema>;
 export type Shadow = z.infer<typeof ShadowSchema>;
 export type GradientSpec = z.infer<typeof GradientSpecSchema>;
 export type ArrowSpec = z.infer<typeof ArrowSpecSchema>;
+export type TextArc = z.infer<typeof TextArcSchema>;
 export type TextSpec = z.infer<typeof TextSpecSchema>;
 export type ImageLayer = z.infer<typeof ImageLayerSchema>;
 export type ShapeLayer = z.infer<typeof ShapeLayerSchema>;

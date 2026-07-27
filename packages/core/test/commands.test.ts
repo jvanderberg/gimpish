@@ -58,6 +58,31 @@ describe("applyDocumentCommand", () => {
     expect(changed.transform).toEqual({ x: 0, y: 0, scale: 2, rotation: 0 });
   });
 
+  it("adds, edits, and removes circular layout on native text", () => {
+    const scene = parseScene({
+      canvas: { width: 800, height: 450 },
+      layers: [{ id: "title", type: "text", text: { content: "Hello", x: 400, y: 300 } }],
+    });
+    const arced = applyDocumentCommand(scene, {
+      kind: "edit-text",
+      layerId: "title",
+      patch: { content: "PALISADES", arc: { radius: 300 } },
+    }).scene;
+    const changed = arced.layers[0];
+    if (changed?.type !== "text") throw new Error("expected text layer");
+    expect(changed.text).toMatchObject({
+      content: "PALISADES",
+      arc: { radius: 300, angle: -90, direction: "clockwise" },
+    });
+
+    const straight = applyDocumentCommand(arced, {
+      kind: "edit-text",
+      layerId: "title",
+      patch: { arc: null },
+    }).scene.layers[0];
+    expect(straight?.type === "text" && straight.text.arc).toBeUndefined();
+  });
+
   it("fits an image and resolves semantic layer edits", () => {
     const scene = parseScene({
       canvas: { width: 800, height: 400 },
